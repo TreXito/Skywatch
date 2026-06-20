@@ -67,6 +67,23 @@ class AlertEngine:
                     alerts.append(alert)
         return alerts
 
+    def colorize(self, a: Aircraft) -> str:
+        """Set marker_category for display only (no alerts, no cooldown).
+
+        Used for viewport/global aircraft that fall outside the home radius but
+        should still be color-coded on the map.
+        """
+        if a.squawk in constants.EMERGENCY_SQUAWKS:
+            a.marker_category = constants.CATEGORY_EMERGENCY
+        elif a.icao24 in self.watchlist:
+            a.watchlist_label = self.watchlist[a.icao24]
+            a.marker_category = constants.CATEGORY_WATCHLIST
+        elif self._is_military(a):
+            a.marker_category = constants.CATEGORY_MILITARY
+        elif self._rare_label(a) and a.marker_category == constants.CATEGORY_NORMAL:
+            a.marker_category = constants.CATEGORY_RARE
+        return a.marker_category
+
     def _classify(self, a: Aircraft, now: float) -> list[AlertRecord]:
         """Return all alert types that fire for this aircraft, and set marker color."""
         out: list[AlertRecord] = []

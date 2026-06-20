@@ -56,12 +56,14 @@
     }
 
     SW.features = config.features || {};
+    SW.trackingMode = config.tracking_mode || "viewport";
     SW.initMap(config);
     SW.initFilters();
     SW.initAlerts();
     SW.initTools();
     SW.initStats();
     SW.initLayers(config);
+    SW.initStates(config);
 
     // Theme.
     document.body.classList.toggle("dark", config.dark_mode);

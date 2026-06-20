@@ -55,9 +55,15 @@
 
   SW.handlePayload = function (payload) {
     if (payload.type !== "update") return;
-    SW.lastList = payload.aircraft || [];
-    SW.updateAircraft(SW.lastList);
-    SW.updateStatus(payload.status, SW.lastList.length);
+    // In viewport/global mode the markers come from states.js; the WebSocket is
+    // only used for live alerts + status. In radius mode it drives the markers.
+    if (SW.trackingMode === "radius") {
+      SW.lastList = payload.aircraft || [];
+      SW.updateAircraft(SW.lastList);
+      SW.updateStatus(payload.status, SW.lastList.length);
+    } else {
+      SW.updateStatus(payload.status, (SW.lastList || []).length);
+    }
     if (payload.new_alerts && payload.new_alerts.length) SW.onNewAlerts(payload.new_alerts);
   };
 })();

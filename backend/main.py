@@ -27,7 +27,8 @@ from .enrichment import Enricher
 from .models import Aircraft
 from .opensky import OpenSkyClient
 from .photos import PhotoService
-from .utils import haversine_km, setup_logging, zoom_for_radius
+from .routes import RouteService
+from .utils import bounding_box, haversine_km, setup_logging, zoom_for_radius
 from .weather import WeatherService
 from .websocket import WebSocketManager
 from .zones import ZoneService
@@ -53,6 +54,7 @@ class AppState:
         self.airports: AirportService
         self.photos: PhotoService
         self.zones: ZoneService
+        self.routes: RouteService
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.poller_task: asyncio.Task | None = None
@@ -92,6 +94,7 @@ async def _startup() -> None:
     state.airports = AirportService(db, settings)
     state.photos = PhotoService(settings)
     state.zones = ZoneService(settings)
+    state.routes = RouteService(settings)
 
     # Load metadata + airports DBs (non-blocking failure tolerated) in the
     # background so the web UI is responsive immediately.
@@ -111,7 +114,7 @@ async def _shutdown() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
     for closer in (state.opensky, state.discord, state.weather,
-                   state.photos, state.zones):
+                   state.photos, state.zones, state.routes):
         with contextlib.suppress(Exception):
             await closer.close()
     with contextlib.suppress(Exception):
@@ -244,6 +247,9 @@ async def get_config():
         "configured": s.is_configured,
         "discord_enabled": state.discord.enabled,
         "version": __version__,
+        "tracking_mode": s.tracking_mode,
+        "max_aircraft": s.max_aircraft,
+        "poll_interval": s.effective_poll_interval,
         "features": {
             "weather": s.weather_enabled,
             "metar": s.metar_enabled,
@@ -252,6 +258,7 @@ async def get_config():
             "daynight": s.daynight_enabled,
             "zones": s.zones_enabled,
             "stats": s.stats_enabled,
+            "routes": s.routes_enabled,
         },
     }
 
@@ -263,6 +270,60 @@ async def get_aircraft():
         "status": state.opensky.status.as_dict(),
         "server_time": time.time(),
     }
+
+
+@app.get("/api/states")
+async def get_states(lamin: float = None, lamax: float = None,
+                     lomin: float = None, lomax: float = None):
+    """Aircraft for an arbitrary map viewport (worldwide), enriched and capped.
+
+    Used by the frontend for viewport/global display. With no bbox params, falls
+    back to the home radius (or global if tracking_mode == 'global').
+    """
+    s = state.settings
+    if None not in (lamin, lamax, lomin, lomax):
+        bbox = (lamin, lamax, lomin, lomax)
+    elif s.tracking_mode == "global":
+        bbox = None
+    else:
+        bbox = bounding_box(s.latitude, s.longitude, s.radius_km)
+
+    aircraft = await state.opensky.fetch_viewport(bbox)
+    if aircraft is None:
+        return {"aircraft": [], "status": state.opensky.status.as_dict(),
+                "server_time": time.time()}
+
+    out = []
+    for a in aircraft:
+        if a.latitude is None or a.longitude is None:
+            continue
+        a.distance_km = haversine_km(s.latitude, s.longitude, a.latitude, a.longitude)
+        await state.enricher.enrich(a)
+        # Let the alert engine's classification color the marker (military/rare/etc.)
+        state.alerts.colorize(a)
+        out.append(a)
+
+    # Cap for browser performance: keep the closest to the viewport centre.
+    if len(out) > s.max_aircraft:
+        if bbox is not None:
+            clat = (bbox[0] + bbox[1]) / 2
+            clon = (bbox[2] + bbox[3]) / 2
+        else:
+            clat, clon = s.latitude, s.longitude
+        out.sort(key=lambda a: haversine_km(clat, clon, a.latitude, a.longitude))
+        out = out[: s.max_aircraft]
+
+    return {
+        "aircraft": [a.model_dump() for a in out],
+        "status": state.opensky.status.as_dict(),
+        "count_total": len(aircraft),
+        "server_time": time.time(),
+    }
+
+
+@app.get("/api/route/{callsign}")
+async def get_route(callsign: str):
+    return {"route": await state.routes.get(callsign)}
 
 
 @app.get("/api/track/{icao24}")

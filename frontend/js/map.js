@@ -117,6 +117,7 @@
       if (!SW.isCategoryVisible(ac.marker_category)) return;
       if (!SW.matchesSearch(ac)) return;
       if (SW.passesAltFilter && !SW.passesAltFilter(ac)) return;
+      if (SW.passesGroundFilter && !SW.passesGroundFilter(ac)) return;
       seen.add(ac.icao24);
       const pos = [ac.latitude, ac.longitude];
       let entry = map.markers[ac.icao24];
@@ -165,6 +166,7 @@
     map.selected = icao24;
     if (!icao24) {
       SW.clearTrail();
+      if (SW.clearRoute) SW.clearRoute();
       document.getElementById("detail-card").classList.add("hidden");
       return;
     }

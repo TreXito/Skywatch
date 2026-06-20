@@ -38,6 +38,12 @@
       await SW.initRadar();
       lf.on("overlayadd", (e) => { if (e.layer === radar.layerGroup) SW.radarOn(); });
       lf.on("overlayremove", (e) => { if (e.layer === radar.layerGroup) SW.radarOff(); });
+      if (SW.satelliteAvailable()) {
+        const satGroup = L.layerGroup();
+        overlaysForControl["🛰️ Clouds (satellite)"] = satGroup;
+        lf.on("overlayadd", (e) => { if (e.layer === satGroup) SW.satelliteOn(); });
+        lf.on("overlayremove", (e) => { if (e.layer === satGroup) SW.satelliteOff(); });
+      }
     }
 
     if (Object.keys(overlaysForControl).length) {
@@ -132,10 +138,25 @@
       radar.host = data.host;
       const past = (data.radar && data.radar.past) || [];
       const now = (data.radar && data.radar.nowcast) || [];
-      radar.frames = past.concat(now);
-      radar.idx = past.length - 1; // start at "now"
+      radar.pastCount = past.length;
+      radar.frames = past.concat(now); // live history + forecast (nowcast)
+      radar.idx = Math.max(0, past.length - 1); // start at "now"
+      radar.satFrames = (data.satellite && data.satellite.infrared) || [];
       SW.buildRadarControl();
     } catch (e) { /* ignore */ }
+  };
+
+  // Satellite (infrared cloud) layer – latest frame, static toggle.
+  let satLayer = null;
+  SW.satelliteAvailable = function () { return radar.satFrames && radar.satFrames.length; };
+  SW.satelliteOn = function () {
+    const f = radar.satFrames[radar.satFrames.length - 1];
+    if (!f) return;
+    satLayer = L.tileLayer(`${radar.host}${f.path}/256/{z}/{x}/{y}/0/0_0.png`,
+      { opacity: 0.5, zIndex: 4, maxZoom: 19 }).addTo(SW.map.leaflet);
+  };
+  SW.satelliteOff = function () {
+    if (satLayer) { SW.map.leaflet.removeLayer(satLayer); satLayer = null; }
   };
 
   function tileLayerForFrame(f) {
@@ -169,10 +190,17 @@
       tileLayerForFrame(f).setOpacity(j === radar.idx ? 0.7 : 0));
     const f = radar.frames[radar.idx];
     const label = document.getElementById("radar-time");
+    const tag = document.getElementById("radar-tag");
     if (label) {
-      const d = new Date(f.time * 1000);
-      const future = f.path.includes("nowcast") || radar.idx >= radar.frames.length - 1;
-      label.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      label.textContent = new Date(f.time * 1000)
+        .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    if (tag) {
+      const isForecast = radar.idx >= radar.pastCount;
+      const mins = Math.round((f.time * 1000 - Date.now()) / 60000);
+      tag.textContent = isForecast ? `forecast +${Math.max(0, mins)}m`
+        : (radar.idx === radar.pastCount - 1 ? "live" : `${mins}m`);
+      tag.className = isForecast ? "radar-tag forecast" : "radar-tag live";
     }
     const slider = document.getElementById("radar-slider");
     if (slider) slider.value = radar.idx;
@@ -197,7 +225,8 @@
     ctrl.innerHTML = `
       <button id="radar-play" class="icon-btn" title="Play/pause">▶</button>
       <input id="radar-slider" type="range" min="0" max="${Math.max(0, radar.frames.length - 1)}" value="${radar.idx}" />
-      <span id="radar-time" class="muted">—</span>`;
+      <span id="radar-time" class="muted">—</span>
+      <span id="radar-tag" class="radar-tag live">live</span>`;
     document.body.appendChild(ctrl);
     radar.control = ctrl;
     ctrl.querySelector("#radar-play").addEventListener("click", () =>

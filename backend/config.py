@@ -61,6 +61,14 @@ class Settings(BaseModel):
     poll_interval: Optional[float] = None   # auto if None
     default_zoom: Optional[int] = None       # auto from radius if None
 
+    # --- display coverage ---
+    # radius   = only show aircraft within radius_km (alerts area)
+    # viewport = show every aircraft in the current map view, worldwide (default)
+    # global   = poll the whole world at once (heavy; high OpenSky credit use)
+    tracking_mode: str = "viewport"
+    max_aircraft: int = 800                  # cap markers for browser performance
+    routes_enabled: bool = True              # origin/destination lookup (adsbdb)
+
     # --- map / UI ---
     dark_mode: bool = True
     tile_url: str = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"

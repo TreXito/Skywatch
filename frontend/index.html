@@ -46,6 +46,10 @@
       <input type="checkbox" id="toggle-radius" checked />
       <span>Show alert radius</span>
     </label>
+    <label class="switch-row">
+      <input type="checkbox" id="toggle-airborne" />
+      <span>Airborne only (hide on-ground)</span>
+    </label>
     <hr/>
     <div class="muted">Max altitude: <b id="alt-value">all</b></div>
     <input id="alt-slider" type="range" min="0" max="100000" step="500" value="100000"
@@ -99,6 +103,7 @@
   <script src="/js/layers.js"></script>
   <script src="/js/stats.js"></script>
   <script src="/js/tools.js"></script>
+  <script src="/js/states.js"></script>
   <script src="/js/websocket.js"></script>
   <script src="/js/app.js"></script>
 </body>

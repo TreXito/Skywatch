@@ -68,6 +68,10 @@ Add Sky Watch as a **custom app**:
 
 ## Features
 
+- 🌍 **See aircraft worldwide** — the map shows every flight in the current view (pan
+  anywhere), not just your radius. Choose `viewport` / `radius` / `global` modes.
+- 🛫 **Flight routes** — click an aircraft to see its **origin → destination** (airline,
+  cities, codes) with the great-circle route drawn on the map (adsbdb.com)
 - 🗺️ Live Leaflet map, aircraft icons rotated by heading, color-coded by category
 - 🎨 Categories: military (red), emergency (orange), watchlist (yellow), helicopter
   (green), normal (blue), rare (purple), ground vehicle (cyan), balloon (white)
@@ -140,6 +144,13 @@ basic-auth accounts. Sky Watch supports **all three**:
 Sky Watch tracks rate limits and backs off automatically (exponential backoff on
 errors, honoring `X-Rate-Limit-Retry-After`). See the live status in the footer.
 
+> **Credits & worldwide mode:** OpenSky bills by query area. `tracking_mode: viewport`
+> (the default) fetches the current map view *in addition to* the home-radius alert
+> poll, so it uses more credits than `radius` mode — especially when zoomed far out or
+> in `global` mode. Anonymous access has a small daily budget; for worldwide browsing a
+> free OpenSky account (or API client) is strongly recommended. If you hit the limit,
+> the map simply pauses until credits reset.
+
 ---
 
 ## Advanced Configuration
@@ -151,7 +162,10 @@ need them.
 |-----|---------|-------------|
 | `port` | `8080` | HTTP port |
 | `host` | `0.0.0.0` | Bind address |
-| `radius_km` | `50` | Alert/poll radius around your location |
+| `radius_km` | `50` | Alert radius around your location (Discord/notifications) |
+| `tracking_mode` | `viewport` | Map coverage: `viewport` (worldwide, in view) / `radius` / `global` |
+| `max_aircraft` | `800` | Max aircraft markers drawn (browser performance) |
+| `routes_enabled` | `true` | Flight origin/destination lookup (adsbdb.com) |
 | `poll_interval` | auto | Seconds between OpenSky polls (auto: 5 auth / 10 anon) |
 | `default_zoom` | auto | Initial map zoom (auto from radius) |
 | `password` | — | Set to enable **HTTP Basic** auth on the web UI |
@@ -209,7 +223,9 @@ need them.
 |----------|-------------|
 | `GET /api/health` | Health check (always open) |
 | `GET /api/config` | Frontend bootstrap config |
-| `GET /api/aircraft` | Current aircraft snapshot |
+| `GET /api/aircraft` | Current home-radius aircraft snapshot |
+| `GET /api/states` | Aircraft in a map viewport (`lamin/lamax/lomin/lomax`), worldwide |
+| `GET /api/route/{callsign}` | Flight origin/destination (adsbdb) |
 | `GET /api/track/{icao24}` | Recent track points for an aircraft |
 | `GET /api/history` | Recent sightings |
 | `GET /api/alerts` | Recent alerts |

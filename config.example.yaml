@@ -31,11 +31,19 @@ discord_webhook: ""
 #  Uncomment and edit only if you need them.
 # ──────────────────────────────────────────────────────────────
 # port: 8080
-# radius_km: 50
+# radius_km: 50         # alert area (Discord/notifications) around your location
 # password: ""          # set to enable HTTP Basic auth on the web UI
 # poll_interval: 10
 # dark_mode: true
 # public_url: "https://skywatch.example.com"
+#
+# How much traffic the MAP shows (alerts always use radius_km):
+#   viewport = every aircraft in the current map view, worldwide (default)
+#   radius   = only aircraft inside radius_km
+#   global   = the whole world at once (heavy on OpenSky credits)
+# tracking_mode: "viewport"
+# max_aircraft: 800     # cap markers drawn (browser performance)
+# routes_enabled: true  # show flight origin/destination (adsbdb.com)
 #
 # Map layers (all on by default): weather radar, airports + METAR, day/night,
 # aircraft photos, conflict zones, statistics.
