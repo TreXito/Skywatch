@@ -12,8 +12,8 @@ def test_defaults_with_only_location(tmp_path):
     assert s.port == 8080
     assert s.radius_km == 50.0
     assert s.is_configured
-    # No credentials → anonymous → 10s poll interval.
-    assert s.effective_poll_interval == 10.0
+    # No credentials → anonymous → conservative poll interval.
+    assert s.effective_poll_interval == 25.0
     assert s.effective_auth_mode == "none"
 
 
@@ -37,7 +37,7 @@ def test_authenticated_poll_interval():
     s = Settings(latitude=1, longitude=1,
                  opensky_username="u", opensky_password="p")
     assert s.has_opensky_auth
-    assert s.effective_poll_interval == 5.0
+    assert s.effective_poll_interval == 15.0
 
 
 def test_watchlist_normalized(tmp_path):

@@ -45,6 +45,14 @@ discord_webhook: ""
 # max_aircraft: 800     # cap markers drawn (browser performance)
 # routes_enabled: true  # show flight origin/destination (adsbdb.com)
 #
+# ⚠️ OpenSky bills CREDITS by query area (~4000/day on a free account). If you get
+#    rate-limited, raise these intervals. The worldwide rare scan is much cheaper
+#    than fast local polling, so it's the recommended way to find rare jets.
+# poll_interval: 15            # local poll (s); auto = 15 (auth) / 25 (anonymous)
+# global_scan_enabled: true    # one worldwide scan for rare/military/emergency jets
+# global_scan_interval: 300    # seconds between worldwide scans
+# region_poll_interval: 120    # seconds between region-watch polls
+#
 # Map labels language / style: dark-en (English labels) | dark | german | light | satellite
 # map_style: "dark-en"
 #

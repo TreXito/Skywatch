@@ -87,7 +87,14 @@ class Settings(BaseModel):
     # --- region-entry alerts (e.g. "anyone flying into Ukraine") ---
     region_alerts_enabled: bool = True
     watch_regions: List[dict] = Field(default_factory=list)
-    region_poll_interval: Optional[float] = None   # default = poll_interval
+    region_poll_interval: Optional[float] = None   # default = 60s (credit-friendly)
+
+    # --- global rare-aircraft scan (worldwide, credit-efficient) ---
+    # One whole-world OpenSky call every N seconds to find genuinely rare/military/
+    # emergency aircraft anywhere – independent of your home radius.
+    global_scan_enabled: bool = True
+    global_scan_interval: int = 300        # seconds between worldwide scans
+    global_scan_alerts: bool = True        # send Discord alerts for global finds
 
     # --- local Ollama AI analysis ---
     ollama_enabled: bool = False
@@ -171,7 +178,10 @@ class Settings(BaseModel):
     def effective_poll_interval(self) -> float:
         if self.poll_interval is not None:
             return max(1.0, float(self.poll_interval))
-        return 5.0 if self.has_opensky_auth else 10.0
+        # OpenSky bills credits by query area (~4000/day for a free account).
+        # Conservative defaults so the local poller + region + global scan stay in
+        # budget. Lower poll_interval in settings only if you have headroom.
+        return 15.0 if self.has_opensky_auth else 25.0
 
     @property
     def effective_auth_mode(self) -> str:

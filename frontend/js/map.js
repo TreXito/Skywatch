@@ -343,6 +343,19 @@
     if (entry) { map.leaflet.setView(entry.marker.getLatLng(), 11); SW.selectAircraft(icao24); }
   };
 
+  // Fly to a worldwide aircraft that may not be on the current view yet, then
+  // select it once the viewport fetch has loaded markers there.
+  SW.flyToAircraft = function (icao24, lat, lon) {
+    if (map.markers[icao24]) { SW.focusAircraft(icao24); return; }
+    if (lat == null || lon == null) return;
+    map.leaflet.setView([lat, lon], 8);
+    let tries = 0;
+    const iv = setInterval(() => {
+      if (map.markers[icao24]) { SW.selectAircraft(icao24); clearInterval(iv); }
+      if (++tries > 12) clearInterval(iv);
+    }, 1000);
+  };
+
   // Full historical trail for the selected aircraft (from the server DB).
   SW.refreshTrail = async function () {
     if (!map.selected) return;

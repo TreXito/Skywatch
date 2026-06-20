@@ -170,6 +170,17 @@ basic-auth accounts. Sky Watch supports **all three**:
 Sky Watch tracks rate limits and backs off automatically (exponential backoff on
 errors, honoring `X-Rate-Limit-Retry-After`). See the live status in the footer.
 
+### Finding rare aircraft worldwide
+
+The **global scan** makes one whole-world OpenSky call every few minutes (default 300s),
+bulk-enriches it, and surfaces genuinely **rare / military / emergency** aircraft
+anywhere on Earth — independent of your home radius. They appear in the **🧠 Interesting
+· worldwide** panel (click one to fly there) and, with a webhook set, post to Discord.
+This is far cheaper on OpenSky credits than constantly panning a zoomed-out map, so it's
+the recommended way to catch the good stuff. The rare-type list is deliberately tight
+(An‑124, A380, 747‑8, Concorde, Il‑76, classic jets … — an everyday 747‑400 is *not* rare);
+extend it via `rare_typecodes`.
+
 > **Credits & worldwide mode:** OpenSky bills by query area. `tracking_mode: viewport`
 > (the default) fetches the current map view *in addition to* the home-radius alert
 > poll, so it uses more credits than `radius` mode — especially when zoomed far out or

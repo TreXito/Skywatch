@@ -60,6 +60,7 @@ class AppState:
         self.ollama: OllamaService
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
+        self.global_interesting: list[Aircraft] = []
         self.region_seen: dict[str, set] = {}
         self.ai_insights: list[dict] = []
         self.ai_insights_ts: float = 0.0
@@ -67,6 +68,7 @@ class AppState:
         self.maintenance_task: asyncio.Task | None = None
         self.region_task: asyncio.Task | None = None
         self.ai_task: asyncio.Task | None = None
+        self.global_task: asyncio.Task | None = None
 
 
 state = AppState()
@@ -116,13 +118,17 @@ async def _startup() -> None:
     state.maintenance_task = asyncio.create_task(_maintenance_loop())
     if settings.region_alerts_enabled and settings.resolved_watch_regions():
         state.region_task = asyncio.create_task(_region_loop())
-    if settings.ollama_enabled and settings.ollama_insights:
+    if settings.global_scan_enabled:
+        state.global_task = asyncio.create_task(_global_scan_loop())
+    # The picks panel runs whenever there's a source (global scan and/or Ollama),
+    # so it shows a heuristic ranking even when Ollama is off/unreachable.
+    if settings.global_scan_enabled or (settings.ollama_enabled and settings.ollama_insights):
         state.ai_task = asyncio.create_task(_ai_loop())
 
 
 async def _shutdown() -> None:
     for task in (state.poller_task, state.maintenance_task, state.region_task,
-                 state.ai_task):
+                 state.ai_task, state.global_task):
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -230,39 +236,131 @@ async def _dispatch_alert(alert, aircraft) -> None:
         await state.discord.send(hl, photo_url=photo_url, ai_text=ai_text)
 
 
+async def _global_scan_loop() -> None:
+    """One worldwide OpenSky call every few minutes to find genuinely rare /
+    military / emergency aircraft anywhere on Earth (credit-efficient).
+
+    Feeds the worldwide "interesting" list, the AI picks, and global alerts.
+    """
+    await asyncio.sleep(8)
+    while True:
+        try:
+            interval = max(60, state.settings.global_scan_interval)
+            aircraft = await state.opensky.fetch_viewport(None)  # None = global
+            if not aircraft:
+                await asyncio.sleep(interval)
+                continue
+
+            await state.enricher.bulk_enrich(aircraft)
+            interesting = []
+            for a in aircraft:
+                if a.latitude is None or a.longitude is None:
+                    continue
+                cat, reason = _why_interesting(a)
+                if not cat:
+                    continue
+                a.marker_category = cat
+                a.distance_km = haversine_km(
+                    state.settings.latitude, state.settings.longitude,
+                    a.latitude, a.longitude)
+                a.reason = reason
+                interesting.append(a)
+
+            # Rank: emergency > military > rare, then by size.
+            rank = {"emergency": 0, "watchlist": 1, "military": 2, "rare": 3}
+            interesting.sort(key=lambda a: (rank.get(a.marker_category, 9),
+                                            -(a.category or 0)))
+            state.global_interesting = interesting[:200]
+            logger.info("Global scan: %d aircraft → %d interesting worldwide",
+                        len(aircraft), len(interesting))
+
+            # Global alerts (rare/military/emergency/watchlist) with cooldown.
+            if state.settings.global_scan_alerts:
+                alerts = await state.alerts.evaluate(state.global_interesting)
+                for alert in alerts:
+                    await _dispatch_alert(alert, _by_icao(state.global_interesting).get(alert.icao24))
+
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Global scan error: %s", exc)
+            await asyncio.sleep(60)
+
+
+def _why_interesting(a: Aircraft):
+    """Return (marker_category, reason) if the aircraft is worldwide-interesting."""
+    if a.squawk in constants.EMERGENCY_SQUAWKS:
+        return "emergency", f"Squawk {a.squawk} – {constants.EMERGENCY_SQUAWKS[a.squawk]}"
+    if a.icao24 in state.alerts.watchlist:
+        return "watchlist", state.alerts.watchlist[a.icao24]
+    if state.alerts._is_military(a):
+        return "military", f"Military – {a.typecode or a.operator or '?'}"
+    rare = state.alerts._rare_label(a)
+    if rare:
+        return "rare", rare
+    return None, None
+
+
+def _by_icao(lst):
+    return {a.icao24: a for a in lst}
+
+
 async def _ai_loop() -> None:
-    """Every minute, ask the local LLM which current aircraft are most interesting;
-    store the picks for the UI and push the top ones to the highlights channel."""
-    await asyncio.sleep(20)
+    """Periodically rank the most interesting aircraft worldwide.
+
+    Uses the global scan results (falls back to home traffic). Always produces a
+    heuristic ranking so the panel is never empty; if Ollama is reachable it adds
+    a short reason per pick. Top picks go to the highlights channel.
+    """
+    await asyncio.sleep(12)
     while True:
         try:
             interval = max(30, state.settings.ollama_insights_interval)
-            picks = await state.ollama.pick_interesting(state.current)
-            by_icao = {a.icao24: a for a in state.current}
-            insights = []
-            for p in picks:
-                a = by_icao.get(p["icao24"])
-                if not a:
-                    continue
-                insights.append({
-                    "icao24": a.icao24,
-                    "callsign": (a.callsign or "").strip(),
-                    "typecode": a.typecode,
-                    "operator": a.operator or a.owner,
-                    "marker_category": a.marker_category,
-                    "reason": p.get("reason", ""),
-                })
-            if insights:
-                state.ai_insights = insights
-                state.ai_insights_ts = time.time()
-                await _broadcast_ai(insights)
-                await _push_highlights(insights, by_icao)
+            source = state.global_interesting or state.current
+            if not source:
+                await asyncio.sleep(interval)
+                continue
+
+            # Heuristic baseline (works even without Ollama).
+            insights = [_insight_dict(a, a.reason or "") for a in source[:12]]
+
+            # Optional AI reasons / re-ranking.
+            picks = await state.ollama.pick_interesting(source)
+            if picks:
+                by_icao = _by_icao(source)
+                ai_insights = []
+                for p in picks:
+                    a = by_icao.get(p["icao24"])
+                    if a:
+                        ai_insights.append(_insight_dict(a, p.get("reason", "")))
+                if ai_insights:
+                    insights = ai_insights
+
+            state.ai_insights = insights
+            state.ai_insights_ts = time.time()
+            await _broadcast_ai(insights)
+            await _push_highlights(insights, _by_icao(source))
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.error("AI loop error: %s", exc)
             await asyncio.sleep(60)
+
+
+def _insight_dict(a: Aircraft, reason: str) -> dict:
+    return {
+        "icao24": a.icao24,
+        "callsign": (a.callsign or "").strip(),
+        "typecode": a.typecode,
+        "operator": a.operator or a.owner,
+        "marker_category": a.marker_category,
+        "latitude": a.latitude,
+        "longitude": a.longitude,
+        "distance_km": a.distance_km,
+        "reason": reason or a.reason or "",
+    }
 
 
 async def _push_highlights(insights: list[dict], by_icao: dict) -> None:
@@ -297,7 +395,8 @@ async def _region_loop() -> None:
     for r in regions:
         state.region_seen[r["name"]] = set()
     first_scan = {r["name"]: True for r in regions}
-    interval = state.settings.region_poll_interval or state.settings.effective_poll_interval
+    # Credit-friendly default: regions don't need fast polling.
+    interval = state.settings.region_poll_interval or max(120.0, state.settings.effective_poll_interval)
 
     while True:
         try:
@@ -495,8 +594,20 @@ async def get_states(lamin: float = None, lamax: float = None,
 
 @app.get("/api/ai/insights")
 async def ai_insights():
+    s = state.settings
     return {"insights": state.ai_insights, "updated": state.ai_insights_ts,
-            "enabled": state.settings.ollama_enabled and state.settings.ollama_insights}
+            "enabled": s.global_scan_enabled or (s.ollama_enabled and s.ollama_insights),
+            "ollama": s.ollama_enabled and s.ollama_insights}
+
+
+@app.get("/api/interesting")
+async def interesting():
+    """Genuinely rare / military / emergency aircraft worldwide (global scan)."""
+    return {
+        "aircraft": [_insight_dict(a, a.reason or "") for a in state.global_interesting],
+        "count": len(state.global_interesting),
+        "server_time": time.time(),
+    }
 
 
 @app.get("/api/ollama/models")
@@ -526,6 +637,9 @@ SETTINGS_SCHEMA = [
     ("Alerts", "alert_cooldown_minutes", "number", "Cooldown (min)"),
     ("Alerts", "region_alerts_enabled", "bool", "Region-entry alerts"),
     ("Alerts", "watch_regions_text", "textarea", "Watch regions (one name per line)"),
+    ("Worldwide", "global_scan_enabled", "bool", "Scan whole world for rare jets"),
+    ("Worldwide", "global_scan_interval", "number", "Global scan interval (s)"),
+    ("Worldwide", "global_scan_alerts", "bool", "Alert on global rare finds"),
     ("Layers", "weather_enabled", "bool", "Weather radar"),
     ("Layers", "airports_enabled", "bool", "Airports"),
     ("Layers", "zones_enabled", "bool", "Conflict zones"),

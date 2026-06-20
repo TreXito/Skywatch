@@ -144,6 +144,21 @@ class Database:
             row = await cur.fetchone()
             return dict(row) if row else None
 
+    async def bulk_lookup_metadata(self, icaos: list[str]) -> dict:
+        """Look up many icao24s at once (for the global scan). Returns {icao: row}."""
+        assert self._db
+        out: dict[str, dict] = {}
+        icaos = [i.lower() for i in icaos if i]
+        for start in range(0, len(icaos), 900):  # stay under SQLite's param limit
+            chunk = icaos[start:start + 900]
+            ph = ",".join("?" for _ in chunk)
+            async with self._db.execute(
+                f"SELECT * FROM metadata WHERE icao24 IN ({ph})", chunk
+            ) as cur:
+                for row in await cur.fetchall():
+                    out[row["icao24"]] = dict(row)
+        return out
+
     async def bulk_upsert_metadata(self, rows: Iterable[tuple]) -> None:
         """rows: (icao24, registration, typecode, manufacturer, model, operator, owner)."""
         assert self._db

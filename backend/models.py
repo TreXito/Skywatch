@@ -37,6 +37,7 @@ class Aircraft(BaseModel):
     distance_km: Optional[float] = None         # from configured base
     marker_category: str = "normal"             # used for frontend coloring
     watchlist_label: Optional[str] = None
+    reason: Optional[str] = None                # why it's interesting (global scan)
 
     @staticmethod
     def from_state_vector(sv: list) -> "Aircraft":

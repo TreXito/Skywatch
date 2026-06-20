@@ -57,6 +57,21 @@ class Enricher:
         aircraft.marker_category = self._categorize(aircraft)
         return aircraft
 
+    async def bulk_enrich(self, aircraft_list) -> None:
+        """Enrich a large list in one DB round-trip (used by the global scan)."""
+        icaos = [a.icao24 for a in aircraft_list]
+        meta = await self.db.bulk_lookup_metadata(icaos)
+        for a in aircraft_list:
+            m = meta.get(a.icao24)
+            if m:
+                a.registration = m.get("registration") or None
+                a.typecode = m.get("typecode") or None
+                a.manufacturer = m.get("manufacturer") or None
+                a.model = m.get("model") or None
+                a.operator = m.get("operator") or None
+                a.owner = m.get("owner") or None
+            a.marker_category = self._categorize(a)
+
     async def _lookup(self, icao24: str) -> Optional[dict]:
         if icao24 in self._cache:
             return self._cache[icao24]

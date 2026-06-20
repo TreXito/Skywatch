@@ -64,6 +64,19 @@ def test_rare_typecode():
     assert eng._rare_label(ac) == "Antonov An-124 Ruslan"
 
 
+def test_common_widebody_not_rare():
+    # The 747-400 / 757 / 767 / A330 are everyday types – must NOT be flagged rare.
+    eng = make_engine()
+    for tc in ("B744", "B752", "B763", "A332", "A343"):
+        assert eng._rare_label(Aircraft(icao24="x", typecode=tc)) is None, tc
+
+
+def test_genuinely_rare_still_flagged():
+    eng = make_engine()
+    for tc in ("A388", "B748", "CONC", "IL76", "MD11"):
+        assert eng._rare_label(Aircraft(icao24="x", typecode=tc)), tc
+
+
 def test_watchlist_match():
     eng = make_engine(watchlist=[WatchlistEntry(icao24="abc123", label="My Plane")])
     ac = Aircraft(icao24="abc123")

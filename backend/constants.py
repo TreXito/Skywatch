@@ -51,34 +51,45 @@ MILITARY_CALLSIGN_PREFIXES = [
 ]
 
 # --- Rare / interesting typecodes -------------------------------------------
-# Aircraft that are uncommon enough to be worth an alert when seen.
+# Genuinely uncommon "stop and look" aircraft worldwide. Deliberately tight:
+# everyday widebodies (747-400, 757, 767, A330/A340-300) are NOT rare. Extend via
+# config `rare_typecodes` if you want more.
 RARE_TYPECODES = {
+    # Outsized / special cargo
     "A124": "Antonov An-124 Ruslan",
     "A225": "Antonov An-225 Mriya",
+    "AN22": "Antonov An-22",
+    "AN12": "Antonov An-12",
+    "AN26": "Antonov An-26",
+    "A30B": "Airbus A300 (classic)",
+    "BLCF": "Boeing 747 Dreamlifter",
+    "A3ST": "Airbus A300-600ST Beluga",
+    "A337": "Airbus BelugaXL",
+    "SGUP": "Aero Spacelines Super Guppy",
+    # Iconic / retired-era
     "A388": "Airbus A380-800",
-    "A380": "Airbus A380",
     "B748": "Boeing 747-8",
-    "B744": "Boeing 747-400",
     "B741": "Boeing 747-100",
     "B742": "Boeing 747-200",
     "B743": "Boeing 747-300",
-    "B752": "Boeing 757-200",
-    "B753": "Boeing 757-300",
+    "B74S": "Boeing 747SP",
     "CONC": "Concorde",
     "DC10": "McDonnell Douglas DC-10",
     "MD11": "McDonnell Douglas MD-11",
     "L101": "Lockheed L-1011 TriStar",
-    "A342": "Airbus A340-200",
-    "A343": "Airbus A340-300",
     "A345": "Airbus A340-500",
     "A346": "Airbus A340-600",
     "B703": "Boeing 707",
+    "VC10": "Vickers VC10",
+    # Russian / rare types in the West
     "IL76": "Ilyushin Il-76",
-    "AN12": "Antonov An-12",
-    "AN22": "Antonov An-22",
-    "BLCF": "Boeing 747 Dreamlifter",
-    "A337": "Airbus BelugaXL",
-    "BELU": "Airbus Beluga",
+    "IL62": "Ilyushin Il-62",
+    "IL96": "Ilyushin Il-96",
+    "IL18": "Ilyushin Il-18",
+    "T154": "Tupolev Tu-154",
+    "T204": "Tupolev Tu-204",
+    "AN72": "Antonov An-72",
+    "A40": "Beriev A-40/Be-200",
 }
 
 # --- OpenSky category codes -------------------------------------------------
