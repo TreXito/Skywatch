@@ -36,3 +36,22 @@ discord_webhook: ""
 # poll_interval: 10
 # dark_mode: true
 # public_url: "https://skywatch.example.com"
+#
+# Map layers (all on by default): weather radar, airports + METAR, day/night,
+# aircraft photos, conflict zones, statistics.
+# weather_enabled: true
+# airports_enabled: true
+# airports_min_type: "medium"   # small | medium | large
+# zones_enabled: true
+#
+# Conflict/hazard zones are built from news feeds + a built-in region gazetteer.
+# Add your own news feeds (extends the defaults) …
+# news_feeds:
+#   - "https://example.com/rss"
+# … or define static zones (e.g. a military operating area near you):
+# conflict_zones:
+#   - name: "Allentsteig MOA"
+#     lat: 48.68
+#     lon: 15.40
+#     radius_km: 25
+#     note: "Military training area"

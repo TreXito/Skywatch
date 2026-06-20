@@ -87,6 +87,24 @@ class Settings(BaseModel):
     rare_typecodes: List[str] = Field(default_factory=list)
     military_keywords: List[str] = Field(default_factory=list)
 
+    # --- map layers / extra features ---
+    weather_enabled: bool = True          # RainViewer precipitation radar overlay
+    metar_enabled: bool = True            # METAR weather for airports
+    airports_enabled: bool = True         # airports overlay
+    airports_max: int = 400               # cap airports returned in radius
+    airports_min_type: str = "medium"     # small | medium | large (smallest to show)
+    photos_enabled: bool = True           # Planespotters aircraft photos
+    daynight_enabled: bool = True         # day/night terminator overlay
+    stats_enabled: bool = True
+
+    # --- conflict / hazard zones overlay ---
+    zones_enabled: bool = True
+    news_feeds: List[str] = Field(default_factory=list)   # extends defaults; [] = use defaults
+    news_feeds_replace: bool = False                       # True = use only these feeds
+    zones_refresh_minutes: int = 30
+    zones_min_mentions: int = 1            # headlines needed to draw a region
+    conflict_zones: List[dict] = Field(default_factory=list)  # static user zones
+
     # --- history / enrichment ---
     history_retention_hours: int = 48
     metadata_update_days: int = 7

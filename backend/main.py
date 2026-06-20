@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .airports import AirportService
 from .alerts import AlertEngine
 from .auth import AuthManager
 from .config import Settings, load_config
@@ -25,8 +26,11 @@ from .discord_notifier import DiscordNotifier
 from .enrichment import Enricher
 from .models import Aircraft
 from .opensky import OpenSkyClient
+from .photos import PhotoService
 from .utils import haversine_km, setup_logging, zoom_for_radius
+from .weather import WeatherService
 from .websocket import WebSocketManager
+from .zones import ZoneService
 
 logger = logging.getLogger("skywatch")
 
@@ -45,6 +49,10 @@ class AppState:
         self.alerts: AlertEngine
         self.discord: DiscordNotifier
         self.auth: AuthManager
+        self.weather: WeatherService
+        self.airports: AirportService
+        self.photos: PhotoService
+        self.zones: ZoneService
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.poller_task: asyncio.Task | None = None
@@ -80,10 +88,17 @@ async def _startup() -> None:
     state.alerts = AlertEngine(settings, db)
     state.discord = DiscordNotifier(settings)
     state.auth = AuthManager(settings)
+    state.weather = WeatherService(settings)
+    state.airports = AirportService(db, settings)
+    state.photos = PhotoService(settings)
+    state.zones = ZoneService(settings)
 
-    # Load metadata DB (non-blocking failure tolerated) in the background so the
-    # web UI is responsive immediately.
+    # Load metadata + airports DBs (non-blocking failure tolerated) in the
+    # background so the web UI is responsive immediately.
     asyncio.create_task(state.enricher.ensure_database())
+    asyncio.create_task(state.airports.ensure_database())
+    if settings.zones_enabled:
+        asyncio.create_task(state.zones.refresh())
 
     state.poller_task = asyncio.create_task(_poller_loop())
     state.maintenance_task = asyncio.create_task(_maintenance_loop())
@@ -95,10 +110,10 @@ async def _shutdown() -> None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-    with contextlib.suppress(Exception):
-        await state.opensky.close()
-    with contextlib.suppress(Exception):
-        await state.discord.close()
+    for closer in (state.opensky, state.discord, state.weather,
+                   state.photos, state.zones):
+        with contextlib.suppress(Exception):
+            await closer.close()
     with contextlib.suppress(Exception):
         await state.db.close()
     logger.info("Sky Watch stopped")
@@ -183,6 +198,9 @@ async def _maintenance_loop() -> None:
             await asyncio.sleep(3600)
             await state.db.prune(state.settings.history_retention_hours)
             await state.enricher.ensure_database()
+            await state.airports.ensure_database()
+            if state.settings.zones_enabled:
+                await state.zones.refresh()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -226,6 +244,15 @@ async def get_config():
         "configured": s.is_configured,
         "discord_enabled": state.discord.enabled,
         "version": __version__,
+        "features": {
+            "weather": s.weather_enabled,
+            "metar": s.metar_enabled,
+            "airports": s.airports_enabled,
+            "photos": s.photos_enabled,
+            "daynight": s.daynight_enabled,
+            "zones": s.zones_enabled,
+            "stats": s.stats_enabled,
+        },
     }
 
 
@@ -265,6 +292,109 @@ async def get_status():
         "poll_interval": state.settings.effective_poll_interval,
         "server_time": time.time(),
     }
+
+
+@app.get("/api/airports")
+async def get_airports():
+    return {"airports": await state.airports.in_radius()}
+
+
+@app.get("/api/weather/metars")
+async def get_metars():
+    return {"metars": await state.weather.metars_in_radius()}
+
+
+@app.get("/api/weather/metar/{station}")
+async def get_metar(station: str):
+    return {"metar": await state.weather.metar_for(station)}
+
+
+@app.get("/api/zones")
+async def get_zones():
+    return {"zones": await state.zones.get_zones()}
+
+
+@app.get("/api/photo/{icao24}")
+async def get_photo(icao24: str):
+    return {"photo": await state.photos.get(icao24)}
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """Live breakdown of current traffic + recent activity."""
+    by_category: dict[str, int] = {}
+    by_country: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    on_ground = 0
+    alt_sum = 0.0
+    alt_n = 0
+    for a in state.current:
+        by_category[a.marker_category] = by_category.get(a.marker_category, 0) + 1
+        if a.origin_country:
+            by_country[a.origin_country] = by_country.get(a.origin_country, 0) + 1
+        if a.typecode:
+            by_type[a.typecode] = by_type.get(a.typecode, 0) + 1
+        if a.on_ground:
+            on_ground += 1
+        alt = a.baro_altitude or a.geo_altitude
+        if alt is not None:
+            alt_sum += alt
+            alt_n += 1
+
+    def top(d, n=8):
+        return sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]
+
+    recent_alerts = await state.db.recent_alerts(limit=500)
+    alert_types: dict[str, int] = {}
+    for al in recent_alerts:
+        alert_types[al["alert_type"]] = alert_types.get(al["alert_type"], 0) + 1
+
+    return {
+        "total": len(state.current),
+        "on_ground": on_ground,
+        "airborne": len(state.current) - on_ground,
+        "avg_altitude_m": round(alt_sum / alt_n) if alt_n else None,
+        "by_category": by_category,
+        "top_countries": top(by_country),
+        "top_types": top(by_type),
+        "alerts_24h": len(recent_alerts),
+        "alerts_by_type": alert_types,
+        "server_time": time.time(),
+    }
+
+
+def _csv_response(headers: list[str], rows: list[dict], filename: str) -> Response:
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/export/history.csv")
+async def export_history():
+    rows = await state.db.recent_sightings(limit=1000)
+    return _csv_response(
+        ["icao24", "callsign", "typecode", "registration", "latitude",
+         "longitude", "altitude_m", "speed_ms", "distance_km", "ts"],
+        rows, "skywatch-history.csv",
+    )
+
+
+@app.get("/api/export/alerts.csv")
+async def export_alerts():
+    rows = await state.db.recent_alerts(limit=500)
+    return _csv_response(
+        ["ts", "alert_type", "title", "icao24", "callsign", "typecode",
+         "registration", "operator", "squawk", "distance_km", "latitude", "longitude"],
+        rows, "skywatch-alerts.csv",
+    )
 
 
 # --- WebSocket ---

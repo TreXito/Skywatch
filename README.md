@@ -80,6 +80,21 @@ Add Sky Watch as a **custom app**:
 - 🔒 Optional auth (none / basic / token)
 - 📜 History of recent sightings and alerts
 
+### Map layers & extras
+
+- 🌧️ **Animated weather radar** (RainViewer) with a play/pause timeline
+- 🛬 **Airports overlay** with live **METAR** weather in each popup (aviationweather.gov)
+- ⚠️ **Conflict / hazard zones** built from live news feeds + a built-in region
+  gazetteer — drawn on the map with the headlines that triggered them. Add your own
+  RSS feeds or static zones (e.g. a military operating area) in config.
+- 🌓 **Day / night terminator** overlay
+- 📷 **Aircraft photos** in the detail card (Planespotters)
+- 📊 **Live statistics** panel (counts by category / country / type, alert breakdown)
+- 🧰 **Tools**: find-my-location, distance measure, fullscreen, altitude filter,
+  sound alerts, and **CSV export** of history & alerts
+
+> All layers use free, keyless data sources and can be toggled off in config.
+
 ---
 
 ## Setting up a Discord Webhook
@@ -163,6 +178,20 @@ need them.
 | `military_typecodes` | `[]` | Extra military typecodes (extends built-ins) |
 | `rare_typecodes` | `[]` | Extra rare typecodes (extends built-ins) |
 | `military_keywords` | `[]` | Extra operator keywords for military detection |
+| `weather_enabled` | `true` | RainViewer precipitation radar overlay |
+| `metar_enabled` | `true` | METAR weather for airport popups |
+| `airports_enabled` | `true` | Airports overlay |
+| `airports_min_type` | `medium` | Smallest airport size to show (`small`/`medium`/`large`) |
+| `airports_max` | `400` | Max airports drawn within radius |
+| `photos_enabled` | `true` | Planespotters aircraft photos |
+| `daynight_enabled` | `true` | Day/night terminator overlay |
+| `stats_enabled` | `true` | Live statistics panel |
+| `zones_enabled` | `true` | Conflict/hazard zone overlay |
+| `news_feeds` | `[]` | Extra news RSS/Atom feeds (extends built-in defaults) |
+| `news_feeds_replace` | `false` | `true` = use only `news_feeds`, ignore defaults |
+| `zones_refresh_minutes` | `30` | How often to re-scan news feeds |
+| `zones_min_mentions` | `1` | Headlines needed before a region is drawn |
+| `conflict_zones` | `[]` | Static user-defined zones (`name`/`lat`/`lon`/`radius_km`/`note`) |
 | `history_retention_hours` | `48` | How long to keep sightings/alerts |
 | `metadata_update_days` | `7` | Metadata DB refresh interval |
 | `metadata_auto_download` | `true` | Auto-download the OpenSky metadata DB |
@@ -185,6 +214,14 @@ need them.
 | `GET /api/history` | Recent sightings |
 | `GET /api/alerts` | Recent alerts |
 | `GET /api/status` | API + server status |
+| `GET /api/airports` | Airports within radius |
+| `GET /api/weather/metars` | METARs in the area |
+| `GET /api/weather/metar/{station}` | METAR for one station |
+| `GET /api/zones` | Conflict/hazard zones (news + static) |
+| `GET /api/photo/{icao24}` | Aircraft photo (Planespotters) |
+| `GET /api/stats` | Live traffic statistics |
+| `GET /api/export/history.csv` | Download sightings as CSV |
+| `GET /api/export/alerts.csv` | Download alerts as CSV |
 | `WS  /ws` | Live update stream |
 
 ---

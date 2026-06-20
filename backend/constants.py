@@ -140,6 +140,80 @@ COLOR_RARE = 0x3498DB        # blue
 COLOR_HOLDING = 0x9B59B6     # purple
 COLOR_DEFAULT = 0x95A5A6     # grey
 
+# --- HTTP ------------------------------------------------------------------
+USER_AGENT = "SkyWatch/1.1 (+https://github.com/skywatch/skywatch)"
+
+# --- External data sources --------------------------------------------------
+RAINVIEWER_MAPS_URL = "https://api.rainviewer.com/public/weather-maps.json"
+METAR_API_URL = "https://aviationweather.gov/api/data/metar"
+PLANESPOTTERS_HEX_URL = "https://api.planespotters.net/pub/photos/hex/{hex}"
+OURAIRPORTS_CSV_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
+
+# Default news feeds scanned for the conflict/hazard-zone overlay. Users can
+# override or extend via `news_feeds` in config.yaml.
+DEFAULT_NEWS_FEEDS = [
+    "https://www.aljazeera.com/xml/rss/all.xml",
+    "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "http://rss.cnn.com/rss/edition_world.rss",
+    "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
+]
+
+# Words in a headline that flag it as conflict/hazard related.
+CONFLICT_KEYWORDS = [
+    "airstrike", "air strike", "missile", "drone strike", "shelling", "rocket",
+    "war", "warzone", "conflict", "invasion", "offensive", "ceasefire", "clashes",
+    "militant", "insurgent", "airspace", "no-fly", "shot down", "downed",
+    "explosion", "bombing", "bombardment", "fighter jet", "artillery", "troops",
+    "border clash", "incursion", "evacuat", "siege", "frontline", "front line",
+]
+
+# Region gazetteer: name -> (lat, lon, radius_km, [aliases]). Used to geocode
+# news headlines into map regions for the conflict/hazard overlay. Curated toward
+# conflict-prone regions plus major countries; users can add static zones too.
+GAZETTEER = {
+    "Ukraine": (49.0, 32.0, 350, ["ukraine", "ukrainian", "kyiv", "kharkiv", "donetsk", "luhansk", "zaporizhzhia", "crimea", "mariupol", "odesa", "bakhmut"]),
+    "Russia": (55.75, 37.62, 300, ["russia", "russian", "moscow", "belgorod", "kursk"]),
+    "Israel": (31.5, 34.9, 90, ["israel", "israeli", "tel aviv", "jerusalem"]),
+    "Gaza": (31.45, 34.39, 30, ["gaza", "rafah", "khan younis"]),
+    "West Bank": (32.0, 35.3, 40, ["west bank", "ramallah", "jenin", "nablus"]),
+    "Lebanon": (33.85, 35.5, 70, ["lebanon", "lebanese", "beirut", "hezbollah"]),
+    "Syria": (34.8, 38.0, 250, ["syria", "syrian", "damascus", "aleppo", "idlib"]),
+    "Iraq": (33.3, 44.4, 250, ["iraq", "iraqi", "baghdad", "mosul", "erbil"]),
+    "Iran": (35.7, 51.4, 350, ["iran", "iranian", "tehran", "isfahan"]),
+    "Yemen": (15.4, 44.2, 250, ["yemen", "yemeni", "houthi", "sanaa", "red sea"]),
+    "Sudan": (15.5, 32.5, 350, ["sudan", "sudanese", "khartoum", "darfur", "rsf"]),
+    "Somalia": (2.05, 45.34, 250, ["somalia", "somali", "mogadishu", "al-shabaab", "al shabaab"]),
+    "Libya": (32.9, 13.2, 300, ["libya", "libyan", "tripoli", "benghazi"]),
+    "Mali": (17.6, -3.0, 400, ["mali", "malian", "bamako", "sahel"]),
+    "Niger": (17.6, 8.0, 400, ["niger", "niamey"]),
+    "Burkina Faso": (12.4, -1.5, 300, ["burkina faso", "ouagadougou"]),
+    "Nigeria": (9.08, 8.68, 350, ["nigeria", "nigerian", "abuja", "boko haram"]),
+    "Ethiopia": (9.0, 39.0, 350, ["ethiopia", "ethiopian", "addis ababa", "tigray", "amhara"]),
+    "DR Congo": (-2.5, 27.0, 300, ["congo", "drc", "goma", "kinshasa", "m23"]),
+    "Afghanistan": (34.5, 69.2, 350, ["afghanistan", "afghan", "kabul", "kandahar", "taliban"]),
+    "Pakistan": (33.7, 73.1, 300, ["pakistan", "pakistani", "islamabad", "waziristan"]),
+    "Myanmar": (19.75, 96.1, 350, ["myanmar", "burma", "naypyidaw", "yangon", "rakhine"]),
+    "North Korea": (39.0, 125.75, 150, ["north korea", "pyongyang", "dprk"]),
+    "Taiwan": (23.7, 121.0, 150, ["taiwan", "taiwanese", "taipei", "taiwan strait"]),
+    "South China Sea": (13.0, 114.0, 500, ["south china sea", "spratly", "paracel"]),
+    "Venezuela": (10.5, -66.9, 250, ["venezuela", "venezuelan", "caracas"]),
+    "Haiti": (18.6, -72.3, 80, ["haiti", "haitian", "port-au-prince"]),
+    "Colombia": (4.7, -74.1, 350, ["colombia", "colombian", "bogota"]),
+    "Mexico": (19.43, -99.13, 400, ["mexico", "mexican", "sinaloa", "cartel"]),
+    "Armenia": (40.18, 44.51, 120, ["armenia", "armenian", "yerevan", "nagorno", "karabakh"]),
+    "Azerbaijan": (40.41, 49.87, 150, ["azerbaijan", "azerbaijani", "baku"]),
+    "Georgia (country)": (41.7, 44.8, 120, ["tbilisi", "abkhazia", "south ossetia"]),
+    "United States": (38.9, -77.04, 400, ["united states", "u.s.", "usa", "washington", "pentagon"]),
+    "United Kingdom": (51.5, -0.13, 150, ["united kingdom", "britain", "british", "london"]),
+    "France": (48.85, 2.35, 250, ["france", "french", "paris"]),
+    "Germany": (52.52, 13.40, 250, ["germany", "german", "berlin"]),
+    "China": (39.9, 116.4, 500, ["china", "chinese", "beijing"]),
+    "India": (28.6, 77.2, 500, ["india", "indian", "new delhi", "kashmir"]),
+    "Egypt": (30.04, 31.24, 300, ["egypt", "egyptian", "cairo", "sinai"]),
+    "Turkey": (39.93, 32.86, 350, ["turkey", "turkish", "ankara", "istanbul"]),
+    "Poland": (52.23, 21.01, 250, ["poland", "polish", "warsaw"]),
+}
+
 # --- OpenSky endpoints ------------------------------------------------------
 OPENSKY_STATES_URL = "https://opensky-network.org/api/states/all"
 OPENSKY_TOKEN_URL = (

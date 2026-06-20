@@ -55,9 +55,13 @@
       config.longitude = config.longitude || 0;
     }
 
+    SW.features = config.features || {};
     SW.initMap(config);
     SW.initFilters();
     SW.initAlerts();
+    SW.initTools();
+    SW.initStats();
+    SW.initLayers(config);
 
     // Theme.
     document.body.classList.toggle("dark", config.dark_mode);

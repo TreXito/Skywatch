@@ -142,6 +142,53 @@ hr { border: 0; border-top: 1px solid var(--border); margin: .8rem 0; }
 .leaflet-popup-content { margin: .7rem .9rem; font-size: .85rem; }
 .leaflet-popup-content b { color: var(--text); }
 
+.icon-btn.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+/* ---- Weather radar control ---- */
+#radar-control {
+  position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; display: flex; align-items: center; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: .4rem .7rem; box-shadow: var(--shadow);
+}
+#radar-control input[type=range] { width: 200px; }
+#radar-time { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ---- Aircraft photo in detail card ---- */
+.dc-photo img { width: 100%; border-radius: 8px; display: block; margin-bottom: .2rem; }
+.dc-photo .muted { font-size: .72rem; }
+
+/* ---- Zone popups ---- */
+.zone-news { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .8rem; }
+.zone-news a { color: var(--accent); text-decoration: none; }
+.metar-box { margin-top: .4rem; font-size: .8rem; }
+
+/* ---- Stats ---- */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: .6rem; }
+.stat-big { background: var(--panel-2); border-radius: 8px; padding: .5rem; text-align: center; }
+.stat-big b { display: block; font-size: 1.3rem; }
+.stat-big span { color: var(--muted); font-size: .75rem; }
+#stats-body h4 { margin: .8rem 0 .3rem; font-size: .85rem; }
+.bar-row { display: flex; align-items: center; gap: .4rem; margin: .2rem 0; font-size: .8rem; }
+.bar-label { width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 4px; }
+.bar-val { width: 28px; text-align: right; color: var(--muted); }
+
+/* ---- Buttons ---- */
+.mini-btn {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: .35rem .5rem; font-size: .78rem; cursor: pointer;
+}
+.mini-btn:hover { border-color: var(--accent); }
+.export-row { display: flex; gap: .4rem; margin-bottom: .6rem; }
+
+/* Leaflet layer control fits the dark theme */
+.leaflet-control-layers {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+}
+.leaflet-control-layers-toggle { background-color: var(--panel); }
+
 .hidden { display: none !important; }
 
 /* ---- Mobile ---- */

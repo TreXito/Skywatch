@@ -21,8 +21,13 @@
       <input id="search-input" type="text" placeholder="Search callsign / type / icao24…" />
     </div>
     <div class="top-actions">
+      <button id="btn-stats" class="icon-btn" title="Statistics">📊</button>
       <button id="btn-filters" class="icon-btn" title="Filters">⚙️</button>
       <button id="btn-alerts" class="icon-btn" title="Alert history">🔔<span id="alert-badge" class="badge hidden">0</span></button>
+      <button id="btn-locate" class="icon-btn" title="Find my location">📍</button>
+      <button id="btn-measure" class="icon-btn" title="Measure distance">📏</button>
+      <button id="btn-sound" class="icon-btn" title="Toggle alert sound">🔇</button>
+      <button id="btn-fullscreen" class="icon-btn" title="Fullscreen">⛶</button>
       <button id="btn-theme" class="icon-btn" title="Toggle theme">🌗</button>
     </div>
   </header>
@@ -42,6 +47,10 @@
       <span>Show alert radius</span>
     </label>
     <hr/>
+    <div class="muted">Max altitude: <b id="alt-value">all</b></div>
+    <input id="alt-slider" type="range" min="0" max="100000" step="500" value="100000"
+           style="width:100%" />
+    <hr/>
     <div class="stat-line"><span>Aircraft in range</span><b id="stat-count">0</b></div>
     <div class="stat-line"><span>Metadata loaded</span><b id="stat-meta">—</b></div>
   </aside>
@@ -49,7 +58,17 @@
   <!-- Alerts panel -->
   <aside id="alerts-panel" class="panel hidden">
     <h3>Recent Alerts</h3>
+    <div class="export-row">
+      <button id="export-alerts" class="mini-btn">⬇ Alerts CSV</button>
+      <button id="export-history" class="mini-btn">⬇ History CSV</button>
+    </div>
     <div id="alerts-list"><p class="muted">No alerts yet.</p></div>
+  </aside>
+
+  <!-- Stats panel -->
+  <aside id="stats-panel" class="panel hidden">
+    <h3>Live Statistics</h3>
+    <div id="stats-body"><p class="muted">Loading…</p></div>
   </aside>
 
   <!-- Aircraft detail popup is rendered by Leaflet; this is the selected-card -->
@@ -77,6 +96,9 @@
   <script src="/js/map.js"></script>
   <script src="/js/filters.js"></script>
   <script src="/js/alerts.js"></script>
+  <script src="/js/layers.js"></script>
+  <script src="/js/stats.js"></script>
+  <script src="/js/tools.js"></script>
   <script src="/js/websocket.js"></script>
   <script src="/js/app.js"></script>
 </body>

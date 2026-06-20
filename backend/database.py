@@ -89,6 +89,20 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts (ts);
 
+            CREATE TABLE IF NOT EXISTS airports (
+                ident       TEXT PRIMARY KEY,
+                type        TEXT,
+                name        TEXT,
+                latitude    REAL,
+                longitude   REAL,
+                iso_country TEXT,
+                icao        TEXT,
+                iata        TEXT,
+                municipality TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_airports_bbox
+                ON airports (latitude, longitude);
+
             CREATE TABLE IF NOT EXISTS meta_info (
                 key   TEXT PRIMARY KEY,
                 value TEXT
@@ -149,6 +163,46 @@ class Database:
             (key, value),
         )
         await self._db.commit()
+
+    # ----------------------------------------------------------- airports
+
+    async def airports_count(self) -> int:
+        assert self._db
+        async with self._db.execute("SELECT COUNT(*) AS c FROM airports") as cur:
+            row = await cur.fetchone()
+            return row["c"] if row else 0
+
+    async def bulk_upsert_airports(self, rows) -> None:
+        """rows: (ident,type,name,lat,lon,iso_country,icao,iata,municipality)."""
+        assert self._db
+        await self._db.executemany(
+            """
+            INSERT INTO airports
+                (ident, type, name, latitude, longitude, iso_country, icao, iata, municipality)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ident) DO UPDATE SET
+                type=excluded.type, name=excluded.name,
+                latitude=excluded.latitude, longitude=excluded.longitude,
+                iso_country=excluded.iso_country, icao=excluded.icao,
+                iata=excluded.iata, municipality=excluded.municipality
+            """,
+            rows,
+        )
+        await self._db.commit()
+
+    async def airports_in_box(self, lat_min, lat_max, lon_min, lon_max,
+                              types: list[str], limit: int = 400) -> list[dict]:
+        assert self._db
+        placeholders = ",".join("?" for _ in types) or "''"
+        sql = (
+            "SELECT ident, type, name, latitude, longitude, iso_country, icao, iata, "
+            "municipality FROM airports WHERE latitude BETWEEN ? AND ? "
+            "AND longitude BETWEEN ? AND ? "
+            f"AND type IN ({placeholders}) LIMIT ?"
+        )
+        params = [lat_min, lat_max, lon_min, lon_max, *types, limit]
+        async with self._db.execute(sql, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
     # ----------------------------------------------------------- sightings
 

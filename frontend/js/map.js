@@ -45,6 +45,13 @@
       maxZoom: 19,
     }).addTo(map.leaflet);
 
+    // Overlay layer groups other modules populate (airports, zones, day/night).
+    map.overlays = {
+      airports: L.layerGroup(),
+      zones: L.layerGroup(),
+      daynight: L.layerGroup(),
+    };
+
     SW.drawRadius(true);
 
     map.leaflet.on("click", () => SW.selectAircraft(null));
@@ -109,6 +116,7 @@
       if (ac.latitude == null || ac.longitude == null) return;
       if (!SW.isCategoryVisible(ac.marker_category)) return;
       if (!SW.matchesSearch(ac)) return;
+      if (SW.passesAltFilter && !SW.passesAltFilter(ac)) return;
       seen.add(ac.icao24);
       const pos = [ac.latitude, ac.longitude];
       let entry = map.markers[ac.icao24];

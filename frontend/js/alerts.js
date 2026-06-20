@@ -49,6 +49,7 @@
       badge.classList.remove("hidden");
     }
     SW.loadAlertHistory();
+    if (SW.playAlertSound) SW.playAlertSound();
     if (Notification && Notification.permission === "granted") {
       alerts.forEach((a) =>
         new Notification("Sky Watch", { body: a.title + " – " + (a.callsign || a.icao24) }));

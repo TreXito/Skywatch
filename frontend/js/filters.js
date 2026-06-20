@@ -91,12 +91,29 @@
       <h3><span class="cat-swatch" style="background:${color}"></span> ${cs}
         <span class="dc-close" onclick="SkyWatch.selectAircraft(null)">✕</span></h3>
       ${ac.watchlist_label ? `<div class="muted">⭐ ${ac.watchlist_label}</div>` : ""}
+      <div class="dc-photo" id="dc-photo"></div>
       <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>
       <div class="dc-links">
         ${cs !== "—" ? `<a href="https://www.flightradar24.com/${cs}" target="_blank">FR24 ↗</a>` : ""}
         <a href="https://globe.adsbexchange.com/?icao=${ac.icao24}" target="_blank">ADS-B ↗</a>
       </div>`;
     card.classList.remove("hidden");
+    SW.loadPhoto(ac.icao24);
+  };
+
+  // Aircraft photo (Planespotters) – lazy, cached server-side.
+  SW.loadPhoto = async function (icao24) {
+    if (!SW.features || !SW.features.photos) return;
+    try {
+      const res = await fetch(`/api/photo/${icao24}`, SW.fetchOpts());
+      const d = await res.json();
+      const box = document.getElementById("dc-photo");
+      if (box && d.photo && d.photo.thumbnail) {
+        box.innerHTML = `<a href="${d.photo.link || "#"}" target="_blank">
+          <img src="${d.photo.thumbnail}" alt="aircraft photo" /></a>
+          <span class="muted">© ${d.photo.photographer || "Planespotters"}</span>`;
+      }
+    } catch (e) { /* ignore */ }
   };
 
   SW.isEmergencySquawk = (sq) => ["7500", "7600", "7700"].includes(sq);
