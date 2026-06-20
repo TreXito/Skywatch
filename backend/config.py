@@ -71,10 +71,31 @@ class Settings(BaseModel):
 
     # --- map / UI ---
     dark_mode: bool = True
+    # Basemap preset: dark-en | dark | german | light | satellite
+    map_style: str = "dark-en"
     tile_url: str = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
     tile_url_light: str = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
     tile_attribution: str = '&copy; OpenStreetMap contributors &copy; CARTO'
     public_url: str = ""              # used in Discord "View on Sky Watch" links
+
+    # --- Discord extras ---
+    discord_photos: bool = True       # include aircraft photo in alert embeds
+
+    # --- region-entry alerts (e.g. "anyone flying into Ukraine") ---
+    region_alerts_enabled: bool = True
+    watch_regions: List[dict] = Field(default_factory=list)
+    region_poll_interval: Optional[float] = None   # default = poll_interval
+
+    # --- local Ollama AI analysis ---
+    ollama_enabled: bool = False
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1"
+    ollama_analyze_alerts: bool = True   # analyse each alert and add to webhook
+    ollama_digest_minutes: int = 0       # 0 = off; periodic situation digest
+
+    # --- flight trails / history (FlightRadar24-like) ---
+    flight_history_enabled: bool = True
+    trail_minutes: int = 180             # how far back the selected trail goes
 
     # --- alert toggles ---
     alert_emergency: bool = True
@@ -171,6 +192,28 @@ class Settings(BaseModel):
         if alert_type == "military" and self.discord_webhook_military:
             return self.discord_webhook_military
         return self.discord_webhook
+
+    def resolved_watch_regions(self) -> list[dict]:
+        """Expand watch_regions: entries may name a built-in gazetteer region or
+        give explicit lat/lon/radius_km. Returns normalized dicts."""
+        from .constants import GAZETTEER
+        out = []
+        for r in self.watch_regions:
+            name = r.get("name") or r.get("region")
+            lat, lon, radius = r.get("lat"), r.get("lon"), r.get("radius_km")
+            if (lat is None or lon is None) and name and name in GAZETTEER:
+                g = GAZETTEER[name]
+                lat, lon, radius = g[0], g[1], radius or g[2]
+            if lat is None or lon is None:
+                continue
+            out.append({
+                "name": name or "Region",
+                "lat": float(lat),
+                "lon": float(lon),
+                "radius_km": float(radius or 200),
+                "label": r.get("label") or f"entered {name or 'region'}",
+            })
+        return out
 
 
 def load_config(path: str | Path = "config.yaml") -> Settings:

@@ -164,10 +164,28 @@ hr { border: 0; border-top: 1px solid var(--border); margin: .8rem 0; }
 .route-arrow { color: var(--accent); }
 .route-line .muted { font-size: .72rem; }
 
-/* ---- Radar live/forecast tag ---- */
+/* ---- Radar live/forecast tag + tabs ---- */
 .radar-tag { font-size: .7rem; padding: .1rem .4rem; border-radius: 5px; font-weight: 600; }
 .radar-tag.live { background: #2ecc71; color: #07301a; }
 .radar-tag.forecast { background: #9b59b6; color: #fff; }
+.radar-tabs { display: flex; gap: 2px; margin-right: .2rem; }
+.radar-tab { background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  font-size: .72rem; padding: .2rem .5rem; border-radius: 6px; cursor: pointer; }
+.radar-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.radar-tab:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ---- Focused aircraft highlight + dim others ---- */
+.ac-marker.focused svg { filter: drop-shadow(0 0 4px #ffd54a) drop-shadow(0 0 8px #ffd54a); }
+body.has-selection .ac-marker:not(.focused) { opacity: .5; }
+body.has-selection .ac-marker.focused { opacity: 1; }
+
+/* ---- Flight history in detail card ---- */
+.dc-flights { margin-top: .4rem; max-height: 160px; overflow-y: auto;
+  border-top: 1px solid var(--border); padding-top: .3rem; }
+.flight-item { font-size: .78rem; padding: .25rem 0; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: .1rem; }
+.flight-item .muted { font-size: .7rem; }
+#dc-flights-toggle { font-size: .8rem; color: var(--accent); text-decoration: none; }
 
 /* ---- Zone popups ---- */
 .zone-news { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .8rem; }

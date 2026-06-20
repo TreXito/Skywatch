@@ -73,7 +73,8 @@
       SW.darkMode = !SW.darkMode;
       document.body.classList.toggle("dark", SW.darkMode);
       document.body.classList.toggle("light", !SW.darkMode);
-      SW.setTiles(SW.darkMode ? config.tile_url_dark : config.tile_url_light);
+      // Map basemap is changed via the layers control (top-left); this toggles
+      // the UI panels theme only.
     });
 
     // Ask for desktop notification permission (best effort).

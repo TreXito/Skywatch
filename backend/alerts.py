@@ -204,6 +204,15 @@ class AlertEngine:
 
     # --------------------------------------------------------------- helpers
 
+    # Public wrappers used by the region watcher in main.py.
+    def build_alert(self, a: Aircraft, alert_type: str, title: str, color: int,
+                    label: Optional[str] = None, now: float = 0.0) -> AlertRecord:
+        return self._build(a, alert_type, title, color, label=label, now=now)
+
+    async def passes_cooldown(self, alert: AlertRecord, now: float = 0.0) -> bool:
+        import time
+        return await self._passes_cooldown(alert, now or time.time())
+
     def _build(self, a: Aircraft, alert_type: str, title: str, color: int,
                label: Optional[str] = None, now: float = 0.0) -> AlertRecord:
         return AlertRecord(

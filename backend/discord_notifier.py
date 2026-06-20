@@ -27,12 +27,18 @@ class DiscordNotifier:
                     or self.settings.discord_webhook_emergency
                     or self.settings.discord_webhook_military)
 
-    async def send(self, alert: AlertRecord) -> bool:
+    async def send(self, alert: AlertRecord, photo_url: str | None = None,
+                   ai_text: str | None = None) -> bool:
         webhook = self.settings.webhook_for(alert.alert_type)
         if not webhook:
             return False
         try:
-            resp = await self._client.post(webhook, json={"embeds": [self._embed(alert)]})
+            embed = self._embed(alert)
+            if photo_url and self.settings.discord_photos:
+                embed["image"] = {"url": photo_url}
+            if ai_text:
+                embed["description"] = f"🧠 **AI analysis**\n{ai_text[:1800]}"
+            resp = await self._client.post(webhook, json={"embeds": [embed]})
             if resp.status_code in (200, 204):
                 return True
             logger.warning("Discord webhook returned %s: %s",

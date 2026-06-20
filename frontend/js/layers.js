@@ -46,9 +46,13 @@
       }
     }
 
-    if (Object.keys(overlaysForControl).length) {
-      L.control.layers(null, overlaysForControl, { collapsed: true, position: "topleft" })
-        .addTo(lf);
+    L.control.layers(SW.map.baseLayers || null, overlaysForControl,
+      { collapsed: true, position: "topleft" }).addTo(lf);
+
+    // Weather radar is "always live" by default – enable it on load.
+    if (features.weather && radar.frames.length) {
+      radar.layerGroup.addTo(lf);
+      SW.radarOn();
     }
 
     // Refresh airports/zones periodically.
@@ -183,9 +187,27 @@
     if (radar.control) radar.control.style.display = "none";
   };
 
+  // Active animation range depends on the tab: live (history→now) vs forecast.
+  function radarRange() {
+    if (radar.mode === "forecast" && radar.frames.length > radar.pastCount)
+      return [radar.pastCount, radar.frames.length - 1];
+    return [0, radar.pastCount - 1];
+  }
+
+  SW.setRadarMode = function (mode) {
+    radar.mode = mode;
+    document.getElementById("radar-tab-live")?.classList.toggle("active", mode === "live");
+    document.getElementById("radar-tab-fc")?.classList.toggle("active", mode === "forecast");
+    const [lo, hi] = radarRange();
+    SW.showRadarFrame(mode === "forecast" ? lo : hi);
+  };
+
   SW.showRadarFrame = function (i) {
     if (!radar.frames.length) return;
-    radar.idx = (i + radar.frames.length) % radar.frames.length;
+    const [lo, hi] = radarRange();
+    if (i > hi) i = lo;
+    if (i < lo) i = hi;
+    radar.idx = i;
     radar.frames.forEach((f, j) =>
       tileLayerForFrame(f).setOpacity(j === radar.idx ? 0.7 : 0));
     const f = radar.frames[radar.idx];
@@ -219,10 +241,16 @@
   };
 
   SW.buildRadarControl = function () {
+    const hasForecast = radar.frames.length > radar.pastCount;
+    radar.mode = "live";
     const ctrl = document.createElement("div");
     ctrl.id = "radar-control";
     ctrl.style.display = "none";
     ctrl.innerHTML = `
+      <div class="radar-tabs">
+        <button id="radar-tab-live" class="radar-tab active">Live</button>
+        <button id="radar-tab-fc" class="radar-tab" ${hasForecast ? "" : "disabled"}>Forecast</button>
+      </div>
       <button id="radar-play" class="icon-btn" title="Play/pause">▶</button>
       <input id="radar-slider" type="range" min="0" max="${Math.max(0, radar.frames.length - 1)}" value="${radar.idx}" />
       <span id="radar-time" class="muted">—</span>
@@ -233,6 +261,10 @@
       radar.playing ? SW.pauseRadar() : SW.playRadar());
     ctrl.querySelector("#radar-slider").addEventListener("input", (e) => {
       SW.pauseRadar(); SW.showRadarFrame(parseInt(e.target.value, 10));
+    });
+    ctrl.querySelector("#radar-tab-live").addEventListener("click", () => SW.setRadarMode("live"));
+    ctrl.querySelector("#radar-tab-fc").addEventListener("click", () => {
+      if (hasForecast) { SW.setRadarMode("forecast"); SW.playRadar(); }
     });
   };
 

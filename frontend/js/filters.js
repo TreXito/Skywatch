@@ -89,7 +89,7 @@
       ["Altitude", fmtAlt(ac.baro_altitude ?? ac.geo_altitude)],
       ["Speed", fmtSpd(ac.velocity)],
       ["Heading", ac.true_track == null ? "—" : `${Math.round(ac.true_track)}°`],
-      ["Squawk", ac.squawk ? `${ac.squawk}${SW.isEmergencySquawk(ac.squawk) ? " ⚠️" : ""}` : "—"],
+      ["Squawk", SW.squawkDisplay(ac.squawk)],
       ["Distance", ac.distance_km == null ? "—" : `${ac.distance_km.toFixed(1)} km`],
     ];
 
@@ -103,10 +103,68 @@
       <div class="dc-links">
         ${cs !== "—" ? `<a href="https://www.flightradar24.com/${cs}" target="_blank">FR24 ↗</a>` : ""}
         <a href="https://globe.adsbexchange.com/?icao=${ac.icao24}" target="_blank">ADS-B ↗</a>
-      </div>`;
+        <a href="#" id="dc-flights-toggle">Flight history</a>
+      </div>
+      <div class="dc-flights hidden" id="dc-flights"></div>`;
     card.classList.remove("hidden");
+    // Fix the toggle label (avoid odd glyphs) and wire it.
+    const ft = document.getElementById("dc-flights-toggle");
+    if (ft) {
+      ft.textContent = "🛫 Flight history";
+      ft.addEventListener("click", (e) => {
+        e.preventDefault();
+        const box = document.getElementById("dc-flights");
+        box.classList.toggle("hidden");
+        if (!box.classList.contains("hidden")) SW.loadFlights(ac.icao24);
+      });
+    }
     SW.loadPhoto(ac.icao24);
     SW.loadRoute(ac);
+  };
+
+  // --- Squawk code explanation ---
+  const SQUAWK_MEANINGS = {
+    "7500": "⚠️ Hijack", "7600": "⚠️ Radio failure", "7700": "⚠️ Emergency",
+    "7777": "Military interceptor / NORDO", "0000": "Non-discrete (military/error)",
+    "1200": "VFR (US/Canada)", "7000": "VFR conspicuity (Europe)",
+    "2000": "Default / uncontrolled entry", "1000": "IFR Mode-S (no discrete code)",
+    "0030": "FIR conspicuity", "0033": "Parachute drop", "7004": "Aerobatics / display",
+    "7010": "Aerodrome traffic", "5000": "NATO / military", "4000": "Military ops",
+  };
+  SW.squawkMeaning = function (sq) {
+    if (!sq) return null;
+    if (SQUAWK_MEANINGS[sq]) return SQUAWK_MEANINGS[sq];
+    if (sq >= "7501" && sq <= "7577") return "Military / special use";
+    if (sq >= "0301" && sq <= "0377") return "Domestic / FIR";
+    return null;
+  };
+  SW.squawkDisplay = function (sq) {
+    if (!sq) return "—";
+    const m = SW.squawkMeaning(sq);
+    return m ? `${sq} – ${m}` : sq;
+  };
+
+  // --- Flight history (FlightRadar24-like, observed by this instance) ---
+  SW.loadFlights = async function (icao24) {
+    const box = document.getElementById("dc-flights");
+    if (!box) return;
+    box.innerHTML = '<span class="muted">Loading…</span>';
+    try {
+      const res = await fetch(`/api/flights/${icao24}`, SW.fetchOpts());
+      const d = await res.json();
+      const fl = d.flights || [];
+      if (!fl.length) { box.innerHTML = '<span class="muted">No recorded flights yet.</span>'; return; }
+      box.innerHTML = fl.map((f) => {
+        const start = new Date(f.start_ts * 1000);
+        const dur = Math.max(0, Math.round((f.end_ts - f.start_ts) / 60));
+        const route = (f.origin || f.destination)
+          ? `<b>${f.origin || "?"}</b>→<b>${f.destination || "?"}</b> ` : "";
+        const alt = f.max_alt_m ? ` · ${Math.round(f.max_alt_m).toLocaleString()} m` : "";
+        return `<div class="flight-item">${route}
+          <span>${f.callsign || "—"}</span>
+          <span class="muted">${start.toLocaleDateString()} ${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${dur} min${alt}</span></div>`;
+      }).join("");
+    } catch (e) { box.innerHTML = '<span class="muted">Failed to load.</span>'; }
   };
 
   // --- Flight route (origin → destination) + map line ---
@@ -116,7 +174,8 @@
     const cs = (ac.callsign || "").trim();
     if (!cs) return;
     try {
-      const res = await fetch(`/api/route/${encodeURIComponent(cs)}`, SW.fetchOpts());
+      const res = await fetch(
+        `/api/route/${encodeURIComponent(cs)}?icao24=${ac.icao24}`, SW.fetchOpts());
       const d = await res.json();
       const r = d.route;
       if (!r || (!r.origin && !r.destination)) return;
@@ -144,20 +203,21 @@
 
     function airportMarker(a, label) {
       const m = L.circleMarker([a.lat, a.lon], {
-        radius: 5, color: "#fff", weight: 1.5, fillColor: "#3498db", fillOpacity: 1,
-      }).bindTooltip(`${label}: ${a.name || a.iata}`, { direction: "top" });
+        radius: 6, color: "#fff", weight: 1.5, fillColor: "#2ecc71", fillOpacity: 1,
+      }).bindTooltip(`${label}: ${a.name || a.iata}`, { direction: "top", permanent: false });
       grp.addLayer(m);
     }
     if (o && o.lat != null) airportMarker(o, "From");
     if (dst && dst.lat != null) airportMarker(dst, "To");
 
-    // Flown segment (origin → aircraft) solid; remaining (aircraft → dest) dashed.
+    // Route in orange so it stands apart from the blue aircraft. Flown segment
+    // (origin → aircraft) solid; remaining (aircraft → destination) dashed.
     if (o && o.lat != null && plane)
       grp.addLayer(L.polyline(SW.greatCircle([o.lat, o.lon], plane),
-        { color: "#3498db", weight: 2, opacity: .8 }));
+        { color: "#ff9f1c", weight: 2.5, opacity: .9 }));
     if (dst && dst.lat != null && plane)
       grp.addLayer(L.polyline(SW.greatCircle(plane, [dst.lat, dst.lon]),
-        { color: "#3498db", weight: 2, opacity: .55, dashArray: "6 6" }));
+        { color: "#ff9f1c", weight: 2, opacity: .55, dashArray: "8 8" }));
   };
 
   SW.clearRoute = function () {

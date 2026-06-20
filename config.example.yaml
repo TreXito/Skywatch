@@ -45,6 +45,32 @@ discord_webhook: ""
 # max_aircraft: 800     # cap markers drawn (browser performance)
 # routes_enabled: true  # show flight origin/destination (adsbdb.com)
 #
+# Map labels language / style: dark-en (English labels) | dark | german | light | satellite
+# map_style: "dark-en"
+#
+# Discord extras
+# discord_photos: true  # attach an aircraft photo to alert embeds
+#
+# Region-entry alerts – ping when ANY aircraft enters a region. Use a built-in
+# gazetteer name (Ukraine, Israel, Gaza, Syria, Russia, …) or custom coordinates.
+# watch_regions:
+#   - name: "Ukraine"
+#   - name: "My MOA"
+#     lat: 48.7
+#     lon: 15.4
+#     radius_km: 60
+#
+# Local Ollama AI analysis (adds a short AI note to Discord alerts).
+# Needs Ollama running locally and the model pulled (e.g. `ollama pull llama3.1`).
+# ollama_enabled: false
+# ollama_url: "http://localhost:11434"
+# ollama_model: "llama3.1"
+# ollama_digest_minutes: 0   # >0 = periodic AI situation summary to Discord
+#
+# Flight history / trails (FlightRadar24-like, for observed aircraft)
+# flight_history_enabled: true
+# trail_minutes: 180
+#
 # Map layers (all on by default): weather radar, airports + METAR, day/night,
 # aircraft photos, conflict zones, statistics.
 # weather_enabled: true

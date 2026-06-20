@@ -72,6 +72,21 @@ Add Sky Watch as a **custom app**:
   anywhere), not just your radius. Choose `viewport` / `radius` / `global` modes.
 - 🛫 **Flight routes** — click an aircraft to see its **origin → destination** (airline,
   cities, codes) with the great-circle route drawn on the map (adsbdb.com)
+- 🗺️ **Readable labels** — English-label dark basemap (no Cyrillic), plus German,
+  light, and satellite styles in the layer switcher
+- 📐 **Size-scaled icons** — aircraft drawn larger/smaller by physical size; markers
+  shrink and **declutter** when zoomed out so key locations stay visible
+- 🎯 **Focus mode** — the selected aircraft is highlighted (gold + glow) and the rest
+  dim, so it has visual priority; its route is orange (distinct from the blue traffic)
+- 🛰️ **Smooth motion** — client-side dead-reckoning predicts positions between updates
+- 🛬 **Flight history** — per-aircraft log of observed flights (FlightRadar24-like),
+  plus full session trail from where Sky Watch first saw it
+- 🌐 **Region-entry alerts** — get pinged when *any* aircraft enters a region you watch
+  (e.g. Ukraine), by gazetteer name or custom coordinates
+- 📷 **Photos in Discord** — alert embeds include an aircraft photo
+- 🧠 **Local AI (Ollama)** — optional: a local LLM writes a short analysis of each alert
+  and sends it along with the webhook
+- ❓ **Squawk decoding** — the detail card explains the transponder code (7700, 7600 …)
 - 🗺️ Live Leaflet map, aircraft icons rotated by heading, color-coded by category
 - 🎨 Categories: military (red), emergency (orange), watchlist (yellow), helicopter
   (green), normal (blue), rare (purple), ground vehicle (cyan), balloon (white)
@@ -166,6 +181,16 @@ need them.
 | `tracking_mode` | `viewport` | Map coverage: `viewport` (worldwide, in view) / `radius` / `global` |
 | `max_aircraft` | `800` | Max aircraft markers drawn (browser performance) |
 | `routes_enabled` | `true` | Flight origin/destination lookup (adsbdb.com) |
+| `map_style` | `dark-en` | Basemap: `dark-en` / `dark` / `german` / `light` / `satellite` |
+| `discord_photos` | `true` | Attach aircraft photo to Discord alert embeds |
+| `watch_regions` | `[]` | Regions to alert on entry (gazetteer name or lat/lon/radius_km) |
+| `region_alerts_enabled` | `true` | Master toggle for region-entry alerts |
+| `flight_history_enabled` | `true` | Record per-aircraft flight history |
+| `trail_minutes` | `180` | How far back the selected aircraft's trail goes |
+| `ollama_enabled` | `false` | Local Ollama AI analysis on alerts |
+| `ollama_url` | `http://localhost:11434` | Ollama server URL |
+| `ollama_model` | `llama3.1` | Ollama model name (must be pulled) |
+| `ollama_digest_minutes` | `0` | >0 = periodic AI situation summary to Discord |
 | `poll_interval` | auto | Seconds between OpenSky polls (auto: 5 auth / 10 anon) |
 | `default_zoom` | auto | Initial map zoom (auto from radius) |
 | `password` | — | Set to enable **HTTP Basic** auth on the web UI |

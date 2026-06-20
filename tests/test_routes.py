@@ -25,3 +25,25 @@ def test_tracking_defaults():
     assert s.tracking_mode == "viewport"
     assert s.max_aircraft == 800
     assert s.routes_enabled is True
+    assert s.map_style == "dark-en"
+    assert s.discord_photos is True
+
+
+def test_resolved_watch_regions_gazetteer():
+    s = Settings(latitude=48, longitude=14,
+                 watch_regions=[{"name": "Ukraine"}])
+    regions = s.resolved_watch_regions()
+    assert len(regions) == 1
+    assert regions[0]["name"] == "Ukraine"
+    assert regions[0]["lat"] != 0 and regions[0]["radius_km"] > 0
+    assert "entered Ukraine" in regions[0]["label"]
+
+
+def test_resolved_watch_regions_explicit_and_invalid():
+    s = Settings(latitude=48, longitude=14, watch_regions=[
+        {"name": "Custom", "lat": 50.0, "lon": 30.0, "radius_km": 120},
+        {"name": "Nowhere"},  # not in gazetteer, no coords → dropped
+    ])
+    regions = s.resolved_watch_regions()
+    assert len(regions) == 1
+    assert regions[0]["lat"] == 50.0 and regions[0]["radius_km"] == 120.0

@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__
+from . import __version__, constants
 from .airports import AirportService
 from .alerts import AlertEngine
 from .auth import AuthManager
@@ -26,6 +26,7 @@ from .discord_notifier import DiscordNotifier
 from .enrichment import Enricher
 from .models import Aircraft
 from .opensky import OpenSkyClient
+from .ollama_ai import OllamaService
 from .photos import PhotoService
 from .routes import RouteService
 from .utils import bounding_box, haversine_km, setup_logging, zoom_for_radius
@@ -55,10 +56,13 @@ class AppState:
         self.photos: PhotoService
         self.zones: ZoneService
         self.routes: RouteService
+        self.ollama: OllamaService
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
+        self.region_seen: dict[str, set] = {}
         self.poller_task: asyncio.Task | None = None
         self.maintenance_task: asyncio.Task | None = None
+        self.region_task: asyncio.Task | None = None
 
 
 state = AppState()
@@ -95,6 +99,7 @@ async def _startup() -> None:
     state.photos = PhotoService(settings)
     state.zones = ZoneService(settings)
     state.routes = RouteService(settings)
+    state.ollama = OllamaService(settings)
 
     # Load metadata + airports DBs (non-blocking failure tolerated) in the
     # background so the web UI is responsive immediately.
@@ -105,16 +110,18 @@ async def _startup() -> None:
 
     state.poller_task = asyncio.create_task(_poller_loop())
     state.maintenance_task = asyncio.create_task(_maintenance_loop())
+    if settings.region_alerts_enabled and settings.resolved_watch_regions():
+        state.region_task = asyncio.create_task(_region_loop())
 
 
 async def _shutdown() -> None:
-    for task in (state.poller_task, state.maintenance_task):
+    for task in (state.poller_task, state.maintenance_task, state.region_task):
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
     for closer in (state.opensky, state.discord, state.weather,
-                   state.photos, state.zones, state.routes):
+                   state.photos, state.zones, state.routes, state.ollama):
         with contextlib.suppress(Exception):
             await closer.close()
     with contextlib.suppress(Exception):
@@ -172,16 +179,103 @@ async def _process(aircraft: list[Aircraft]) -> None:
 
     state.current = enriched
     await state.db.record_sightings(enriched)
+    if state.settings.flight_history_enabled:
+        await state.db.update_flights(enriched)
 
     # Alerts.
+    by_icao = {a.icao24: a for a in enriched}
     alerts = await state.alerts.evaluate(enriched)
     for alert in alerts:
-        await state.db.record_alert(alert)
-        logger.info("ALERT [%s] %s (%s)", alert.alert_type, alert.title, alert.icao24)
-        if state.discord.enabled:
-            await state.discord.send(alert)
+        await _dispatch_alert(alert, by_icao.get(alert.icao24))
 
     await _broadcast_snapshot(enriched, new_alerts=alerts)
+
+
+async def _dispatch_alert(alert, aircraft) -> None:
+    """Record, log, and send an alert to Discord with photo + optional AI note."""
+    await state.db.record_alert(alert)
+    logger.info("ALERT [%s] %s (%s)", alert.alert_type, alert.title, alert.icao24)
+    if not state.discord.enabled:
+        return
+
+    photo_url = None
+    if state.settings.discord_photos:
+        photo = await state.photos.get(alert.icao24)
+        photo_url = photo.get("thumbnail") if photo else None
+
+    route = None
+    callsign = (aircraft.callsign if aircraft else alert.callsign) or ""
+    if callsign and state.settings.routes_enabled:
+        route = await state.routes.get(callsign)
+
+    ai_text = None
+    try:
+        ai_text = await state.ollama.analyze_alert(alert, route)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Ollama analysis failed: %s", exc)
+
+    await state.discord.send(alert, photo_url=photo_url, ai_text=ai_text)
+
+
+async def _region_loop() -> None:
+    """Poll each watch region and alert when a new aircraft enters it."""
+    await asyncio.sleep(3)
+    regions = state.settings.resolved_watch_regions()
+    for r in regions:
+        state.region_seen[r["name"]] = set()
+    first_scan = {r["name"]: True for r in regions}
+    interval = state.settings.region_poll_interval or state.settings.effective_poll_interval
+
+    while True:
+        try:
+            for r in regions:
+                bbox = bounding_box(r["lat"], r["lon"], r["radius_km"])
+                aircraft = await state.opensky.fetch_viewport(bbox)
+                if aircraft is None:
+                    continue
+                current: set[str] = set()
+                entrants = []
+                for a in aircraft:
+                    if a.latitude is None or a.longitude is None:
+                        continue
+                    if haversine_km(r["lat"], r["lon"], a.latitude, a.longitude) > r["radius_km"]:
+                        continue
+                    current.add(a.icao24)
+                    if a.icao24 not in state.region_seen[r["name"]]:
+                        entrants.append(a)
+
+                # Don't alert on the first scan (everyone already inside).
+                if not first_scan[r["name"]]:
+                    for a in entrants:
+                        await _handle_region_entry(a, r)
+                state.region_seen[r["name"]] = current
+                first_scan[r["name"]] = False
+                await asyncio.sleep(2)  # stagger region calls
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Region loop error: %s", exc)
+            await asyncio.sleep(10)
+
+
+async def _handle_region_entry(a: Aircraft, region: dict) -> None:
+    await state.enricher.enrich(a)
+    state.alerts.colorize(a)
+    import time as _t
+    alert = state.alerts.build_alert(
+        a, "region", f"🌍 {region['label']}", constants.COLOR_RARE,
+        label=region["name"], now=_t.time(),
+    )
+    if not await state.alerts.passes_cooldown(alert):
+        return
+    await _dispatch_alert(alert, a)
+    # Push a live alert to connected clients too.
+    await state.ws.broadcast({
+        "type": "update", "aircraft": [x.model_dump() for x in state.current],
+        "status": state.opensky.status.as_dict(), "server_time": _t.time(),
+        "new_alerts": [alert.model_dump()],
+    })
 
 
 async def _broadcast_snapshot(aircraft: list[Aircraft], new_alerts=None) -> None:
@@ -250,6 +344,9 @@ async def get_config():
         "tracking_mode": s.tracking_mode,
         "max_aircraft": s.max_aircraft,
         "poll_interval": s.effective_poll_interval,
+        "map_style": s.map_style,
+        "trail_minutes": s.trail_minutes,
+        "watch_regions": s.resolved_watch_regions(),
         "features": {
             "weather": s.weather_enabled,
             "metar": s.metar_enabled,
@@ -259,6 +356,8 @@ async def get_config():
             "zones": s.zones_enabled,
             "stats": s.stats_enabled,
             "routes": s.routes_enabled,
+            "flights": s.flight_history_enabled,
+            "ollama": s.ollama_enabled,
         },
     }
 
@@ -322,15 +421,28 @@ async def get_states(lamin: float = None, lamax: float = None,
 
 
 @app.get("/api/route/{callsign}")
-async def get_route(callsign: str):
-    return {"route": await state.routes.get(callsign)}
+async def get_route(callsign: str, icao24: str = None):
+    route = await state.routes.get(callsign)
+    # Persist origin/dest onto the aircraft's current flight for the history log.
+    if route and icao24 and state.settings.flight_history_enabled:
+        o = (route.get("origin") or {}).get("iata") or (route.get("origin") or {}).get("icao")
+        d = (route.get("destination") or {}).get("iata") or (route.get("destination") or {}).get("icao")
+        if o or d:
+            await state.db.set_flight_route(icao24, callsign.strip().upper(), o, d)
+    return {"route": route}
 
 
 @app.get("/api/track/{icao24}")
 async def get_track(icao24: str):
-    since = time.time() - 1800  # last 30 minutes
+    since = time.time() - state.settings.trail_minutes * 60
     points = await state.db.recent_track(icao24, since)
     return {"icao24": icao24.lower(), "track": points}
+
+
+@app.get("/api/flights/{icao24}")
+async def get_flights(icao24: str):
+    return {"icao24": icao24.lower(),
+            "flights": await state.db.recent_flights(icao24, limit=40)}
 
 
 @app.get("/api/history")

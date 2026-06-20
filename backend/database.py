@@ -103,6 +103,23 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_airports_bbox
                 ON airports (latitude, longitude);
 
+            CREATE TABLE IF NOT EXISTS flights (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                icao24      TEXT NOT NULL,
+                callsign    TEXT,
+                typecode    TEXT,
+                registration TEXT,
+                origin      TEXT,
+                destination TEXT,
+                start_ts    REAL NOT NULL,
+                end_ts      REAL NOT NULL,
+                max_alt_m   REAL,
+                min_alt_m   REAL,
+                points      INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_flights_icao
+                ON flights (icao24, end_ts);
+
             CREATE TABLE IF NOT EXISTS meta_info (
                 key   TEXT PRIMARY KEY,
                 value TEXT
@@ -247,6 +264,72 @@ class Database:
             "altitude_m, speed_ms, distance_km, MAX(ts) AS ts FROM sightings "
             "GROUP BY icao24 ORDER BY ts DESC LIMIT ?",
             (limit,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+    # ----------------------------------------------------------- flights
+
+    async def update_flights(self, aircraft_list, gap_s: float = 1800) -> None:
+        """Attribute observed positions to per-aircraft flight sessions.
+
+        A new flight is started when an aircraft reappears after `gap_s` of no
+        contact or with a different callsign; otherwise the current flight is
+        extended. Gives a FlightRadar24-like per-aircraft flight log.
+        """
+        assert self._db
+        now = time.time()
+        for a in aircraft_list:
+            if a.latitude is None or a.longitude is None:
+                continue
+            alt = a.baro_altitude or a.geo_altitude
+            callsign = (a.callsign or "").strip() or None
+            async with self._db.execute(
+                "SELECT id, callsign, end_ts, max_alt_m, min_alt_m, points "
+                "FROM flights WHERE icao24 = ? ORDER BY end_ts DESC LIMIT 1",
+                (a.icao24,),
+            ) as cur:
+                row = await cur.fetchone()
+
+            new_flight = (
+                row is None
+                or (now - row["end_ts"]) > gap_s
+                or (callsign and row["callsign"] and callsign != row["callsign"])
+            )
+            if new_flight:
+                await self._db.execute(
+                    "INSERT INTO flights (icao24, callsign, typecode, registration, "
+                    "start_ts, end_ts, max_alt_m, min_alt_m, points) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    (a.icao24, callsign, a.typecode, a.registration,
+                     now, now, alt, alt),
+                )
+            else:
+                mx = max(row["max_alt_m"] or 0, alt or 0) if alt is not None else row["max_alt_m"]
+                mn = (min(row["min_alt_m"], alt) if (row["min_alt_m"] is not None and alt is not None)
+                      else (alt if row["min_alt_m"] is None else row["min_alt_m"]))
+                await self._db.execute(
+                    "UPDATE flights SET end_ts=?, points=points+1, max_alt_m=?, "
+                    "min_alt_m=?, callsign=COALESCE(callsign, ?) WHERE id=?",
+                    (now, mx, mn, callsign, row["id"]),
+                )
+        await self._db.commit()
+
+    async def set_flight_route(self, icao24: str, callsign: str,
+                               origin: str, destination: str) -> None:
+        assert self._db
+        await self._db.execute(
+            "UPDATE flights SET origin=COALESCE(origin, ?), "
+            "destination=COALESCE(destination, ?) WHERE icao24=? AND callsign=? "
+            "AND end_ts = (SELECT MAX(end_ts) FROM flights WHERE icao24=?)",
+            (origin, destination, icao24.lower(), callsign, icao24.lower()),
+        )
+        await self._db.commit()
+
+    async def recent_flights(self, icao24: str, limit: int = 25) -> list[dict]:
+        assert self._db
+        async with self._db.execute(
+            "SELECT * FROM flights WHERE icao24 = ? ORDER BY end_ts DESC LIMIT ?",
+            (icao24.lower(), limit),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
 
