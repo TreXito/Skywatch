@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# Sky Watch runtime
+config.yaml
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Test / build
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/

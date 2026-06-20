@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────
+#  Sky Watch – configuration
+#  Fill in your location below. Everything else is optional.
+# ──────────────────────────────────────────────────────────────
+
+# Your location (REQUIRED) – default is Linz, Austria.
+latitude: 48.3064
+longitude: 14.2858
+
+# OpenSky API – free account at https://opensky-network.org
+# Leave empty for anonymous access (slower polling, heavier rate limits).
+opensky_username: ""
+opensky_password: ""
+# OpenSky migrated to OAuth2 API clients. If you created an API client,
+# put its credentials here instead (takes priority over username/password):
+# opensky_client_id: ""
+# opensky_client_secret: ""
+
+# Discord alerts – paste your webhook URL, leave empty to disable.
+discord_webhook: ""
+
+# Optional: your personal watchlist (alerts when these enter your radius).
+# watchlist:
+#   - icao24: "440b41"
+#     label: "RotorSky R22 (OE-XIW)"
+#   - icao24: "3c6444"
+#     label: "Antonov An-124"
+
+# ──────────────────────────────────────────────────────────────
+#  Advanced options (all optional – see README "Advanced Configuration").
+#  Uncomment and edit only if you need them.
+# ──────────────────────────────────────────────────────────────
+# port: 8080
+# radius_km: 50
+# password: ""          # set to enable HTTP Basic auth on the web UI
+# poll_interval: 10
+# dark_mode: true
+# public_url: "https://skywatch.example.com"

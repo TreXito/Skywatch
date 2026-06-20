@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+  <title>Sky Watch – Live Flight Tracker</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="dark">
+  <div id="map"></div>
+
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="brand">🛫 <span>Sky Watch</span></div>
+    <div class="search">
+      <input id="search-input" type="text" placeholder="Search callsign / type / icao24…" />
+    </div>
+    <div class="top-actions">
+      <button id="btn-filters" class="icon-btn" title="Filters">⚙️</button>
+      <button id="btn-alerts" class="icon-btn" title="Alert history">🔔<span id="alert-badge" class="badge hidden">0</span></button>
+      <button id="btn-theme" class="icon-btn" title="Toggle theme">🌗</button>
+    </div>
+  </header>
+
+  <!-- Filter panel -->
+  <aside id="filter-panel" class="panel hidden">
+    <h3>Filters</h3>
+    <p class="muted">Toggle aircraft categories</p>
+    <div id="category-toggles"></div>
+    <hr/>
+    <label class="switch-row">
+      <input type="checkbox" id="toggle-trails" checked />
+      <span>Show trail for selected aircraft</span>
+    </label>
+    <label class="switch-row">
+      <input type="checkbox" id="toggle-radius" checked />
+      <span>Show alert radius</span>
+    </label>
+    <hr/>
+    <div class="stat-line"><span>Aircraft in range</span><b id="stat-count">0</b></div>
+    <div class="stat-line"><span>Metadata loaded</span><b id="stat-meta">—</b></div>
+  </aside>
+
+  <!-- Alerts panel -->
+  <aside id="alerts-panel" class="panel hidden">
+    <h3>Recent Alerts</h3>
+    <div id="alerts-list"><p class="muted">No alerts yet.</p></div>
+  </aside>
+
+  <!-- Aircraft detail popup is rendered by Leaflet; this is the selected-card -->
+  <section id="detail-card" class="hidden"></section>
+
+  <!-- Footer / status bar -->
+  <footer id="statusbar">
+    <span id="status-conn" class="status-dot offline"></span>
+    <span id="status-text">Connecting…</span>
+    <span class="spacer"></span>
+    <span id="status-count">0 aircraft</span>
+    <span id="status-update">—</span>
+    <span id="status-rate"></span>
+  </footer>
+
+  <!-- Unconfigured banner -->
+  <div id="config-banner" class="hidden">
+    ⚠️ No location configured. Set <code>latitude</code> and <code>longitude</code> in
+    <code>config.yaml</code> and restart.
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  <script src="/js/map.js"></script>
+  <script src="/js/filters.js"></script>
+  <script src="/js/alerts.js"></script>
+  <script src="/js/websocket.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

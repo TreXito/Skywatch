@@ -1,0 +1,6 @@
+# Normalize line endings. Shell scripts MUST stay LF or they break on Linux/Mac.
+* text=auto eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.svg text eol=lf

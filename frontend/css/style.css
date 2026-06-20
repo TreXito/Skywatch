@@ -1,0 +1,153 @@
+/* Sky Watch – theme via CSS variables, dark default, mobile responsive */
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1c2230;
+  --border: #2a313c;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #3498db;
+  --danger: #e74c3c;
+  --shadow: 0 8px 30px rgba(0,0,0,.45);
+}
+body.light {
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --panel-2: #eef2f6;
+  --border: #d7dee6;
+  --text: #1a2029;
+  --muted: #5a6572;
+  --shadow: 0 8px 30px rgba(0,0,0,.15);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+#map { position: absolute; inset: 0; z-index: 1; background: var(--bg); }
+
+/* ---- Top bar ---- */
+#topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem .8rem;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; font-size: 1.1rem; white-space: nowrap; }
+.brand span { vertical-align: middle; }
+.search { flex: 1; max-width: 420px; }
+.search input {
+  width: 100%; padding: .5rem .7rem; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.top-actions { display: flex; gap: .35rem; margin-left: auto; }
+.icon-btn {
+  position: relative; font-size: 1.1rem; line-height: 1;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.badge {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px;
+  padding: 0 4px; border-radius: 9px; background: var(--danger); color: #fff;
+  font-size: .7rem; line-height: 18px; text-align: center;
+}
+
+/* ---- Panels ---- */
+.panel {
+  position: absolute; top: 64px; right: 12px; z-index: 1000;
+  width: 320px; max-width: calc(100vw - 24px); max-height: calc(100vh - 130px);
+  overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1rem; box-shadow: var(--shadow);
+}
+.panel h3 { margin: 0 0 .5rem; }
+.muted { color: var(--muted); font-size: .85rem; }
+hr { border: 0; border-top: 1px solid var(--border); margin: .8rem 0; }
+.switch-row { display: flex; align-items: center; gap: .5rem; margin: .4rem 0;
+  font-size: .9rem; cursor: pointer; }
+.stat-line { display: flex; justify-content: space-between; padding: .25rem 0;
+  font-size: .9rem; }
+
+/* category toggles */
+.cat-toggle { display: flex; align-items: center; gap: .5rem; padding: .3rem 0;
+  cursor: pointer; font-size: .9rem; }
+.cat-swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+
+/* ---- Alerts list ---- */
+.alert-item {
+  border-left: 4px solid var(--muted); background: var(--panel-2);
+  border-radius: 8px; padding: .55rem .7rem; margin-bottom: .5rem; cursor: pointer;
+}
+.alert-item:hover { border-color: var(--accent); }
+.alert-item .a-title { font-weight: 600; font-size: .9rem; }
+.alert-item .a-meta { color: var(--muted); font-size: .78rem; margin-top: .2rem; }
+
+/* ---- Detail card ---- */
+#detail-card {
+  position: absolute; bottom: 44px; left: 12px; z-index: 1000;
+  width: 300px; max-width: calc(100vw - 24px);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: .9rem; box-shadow: var(--shadow);
+}
+#detail-card h3 { margin: 0 0 .3rem; display: flex; align-items: center; gap: .4rem; }
+#detail-card .dc-close { margin-left: auto; cursor: pointer; color: var(--muted); }
+#detail-card table { width: 100%; font-size: .85rem; border-collapse: collapse; }
+#detail-card td { padding: .15rem 0; }
+#detail-card td:first-child { color: var(--muted); width: 42%; }
+.dc-links { margin-top: .5rem; display: flex; flex-wrap: wrap; gap: .4rem; }
+.dc-links a { font-size: .8rem; color: var(--accent); text-decoration: none; }
+
+/* ---- Status bar ---- */
+#statusbar {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .35rem .8rem; font-size: .8rem;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px); border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+.spacer { flex: 1; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.status-dot.online { background: #2ecc71; }
+.status-dot.offline { background: var(--danger); }
+
+/* ---- Config banner ---- */
+#config-banner {
+  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+  z-index: 1100; background: #b8860b; color: #fff; padding: .6rem 1rem;
+  border-radius: 8px; font-size: .9rem; box-shadow: var(--shadow);
+}
+#config-banner code { background: rgba(0,0,0,.25); padding: 0 .25rem; border-radius: 4px; }
+
+/* ---- Aircraft markers ---- */
+.ac-marker { transition: opacity .4s ease; }
+.ac-marker svg { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+.ac-marker.stale { opacity: .35; }
+.ac-label {
+  font-size: 10px; color: var(--text); text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg);
+  white-space: nowrap; font-weight: 600;
+}
+
+/* Leaflet popup theming */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+}
+.leaflet-popup-content { margin: .7rem .9rem; font-size: .85rem; }
+.leaflet-popup-content b { color: var(--text); }
+
+.hidden { display: none !important; }
+
+/* ---- Mobile ---- */
+@media (max-width: 640px) {
+  .brand span { display: none; }
+  .panel { top: 60px; left: 8px; right: 8px; width: auto; }
+  #detail-card { left: 8px; right: 8px; width: auto; }
+  .search { max-width: none; }
+}

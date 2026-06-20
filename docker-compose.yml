@@ -1,0 +1,24 @@
+services:
+  skywatch:
+    build: .
+    image: skywatch:latest
+    container_name: skywatch
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - skywatch-data:/app/data
+      - skywatch-logs:/app/logs
+    environment:
+      - TZ=Europe/Vienna
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  skywatch-data:
+  skywatch-logs:

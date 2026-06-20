@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run tests
+        run: pytest -q
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        run: |
+          VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          echo "## Changes" > CHANGELOG.md
+          if [ -n "$PREV" ]; then
+            git log "$PREV"..HEAD --pretty=format:'- %s (%an)' >> CHANGELOG.md
+          else
+            git log -20 --pretty=format:'- %s (%an)' >> CHANGELOG.md
+          fi
+          echo "" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "**Docker image:** \`ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}\`" >> CHANGELOG.md
+
+      - name: Create source archives
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git archive --format=tar.gz --prefix="skywatch/" -o "skywatch-${VERSION}.tar.gz" HEAD
+          git archive --format=zip --prefix="skywatch/" -o "skywatch-${VERSION}.zip" HEAD
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Sky Watch ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: |
+            skywatch-*.tar.gz
+            skywatch-*.zip
+
+  docker:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ needs.release.outputs.version }}
