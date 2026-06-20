@@ -1,7 +1,18 @@
 import math
 
-from backend.utils import haversine_km, bounding_box, zoom_for_radius
+from backend.utils import haversine_km, bounding_box, zoom_for_radius, cross_track_km
 from backend.models import Aircraft
+
+
+def test_cross_track_on_path_is_small():
+    # Point on the great circle between (0,0) and (0,20) is ~0 off-track.
+    assert cross_track_km(0.0, 10.0, 0.0, 0.0, 0.0, 20.0) < 1.0
+
+
+def test_cross_track_off_path_is_large():
+    # An aircraft far from the corridor (the wrong-route case) is far off-track.
+    d = cross_track_km(48.0, 14.0, 1.35, 103.99, 22.31, 113.91)  # SIN->HKG line
+    assert d > 2000
 
 
 def test_haversine_known_distance():

@@ -54,6 +54,10 @@
   }
 
   SW.handlePayload = function (payload) {
+    if (payload.type === "ai_insights") {
+      if (SW.onAIInsights) SW.onAIInsights(payload.insights);
+      return;
+    }
     if (payload.type !== "update") return;
     // In viewport/global mode the markers come from states.js; the WebSocket is
     // only used for live alerts + status. In radius mode it drives the markers.

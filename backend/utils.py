@@ -21,6 +21,27 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
+def _bearing(lat1, lon1, lat2, lon2):
+    rlat1, rlat2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(rlat2)
+    x = math.cos(rlat1) * math.sin(rlat2) - math.sin(rlat1) * math.cos(rlat2) * math.cos(dlon)
+    return math.atan2(y, x)
+
+
+def cross_track_km(lat, lon, lat1, lon1, lat2, lon2) -> float:
+    """Distance of point (lat,lon) from the great circle through (1)→(2), in km.
+
+    Used to sanity-check flight routes: an aircraft physically far from the
+    great-circle corridor between its claimed origin and destination almost
+    certainly has a wrong (reused-callsign) route.
+    """
+    d13 = haversine_km(lat1, lon1, lat, lon) / EARTH_RADIUS_KM   # angular
+    theta13 = _bearing(lat1, lon1, lat, lon)
+    theta12 = _bearing(lat1, lon1, lat2, lon2)
+    return abs(math.asin(math.sin(d13) * math.sin(theta13 - theta12)) * EARTH_RADIUS_KM)
+
+
 def bounding_box(lat: float, lon: float, radius_km: float):
     """Return (lat_min, lat_max, lon_min, lon_max) enclosing a radius.
 

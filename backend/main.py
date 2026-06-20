@@ -29,7 +29,8 @@ from .opensky import OpenSkyClient
 from .ollama_ai import OllamaService
 from .photos import PhotoService
 from .routes import RouteService
-from .utils import bounding_box, haversine_km, setup_logging, zoom_for_radius
+from .utils import (bounding_box, cross_track_km, haversine_km, setup_logging,
+                    zoom_for_radius)
 from .weather import WeatherService
 from .websocket import WebSocketManager
 from .zones import ZoneService
@@ -60,9 +61,12 @@ class AppState:
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.region_seen: dict[str, set] = {}
+        self.ai_insights: list[dict] = []
+        self.ai_insights_ts: float = 0.0
         self.poller_task: asyncio.Task | None = None
         self.maintenance_task: asyncio.Task | None = None
         self.region_task: asyncio.Task | None = None
+        self.ai_task: asyncio.Task | None = None
 
 
 state = AppState()
@@ -112,10 +116,13 @@ async def _startup() -> None:
     state.maintenance_task = asyncio.create_task(_maintenance_loop())
     if settings.region_alerts_enabled and settings.resolved_watch_regions():
         state.region_task = asyncio.create_task(_region_loop())
+    if settings.ollama_enabled and settings.ollama_insights:
+        state.ai_task = asyncio.create_task(_ai_loop())
 
 
 async def _shutdown() -> None:
-    for task in (state.poller_task, state.maintenance_task, state.region_task):
+    for task in (state.poller_task, state.maintenance_task, state.region_task,
+                 state.ai_task):
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -215,6 +222,72 @@ async def _dispatch_alert(alert, aircraft) -> None:
         logger.debug("Ollama analysis failed: %s", exc)
 
     await state.discord.send(alert, photo_url=photo_url, ai_text=ai_text)
+
+    # The coolest cases also go to the dedicated highlights channel (photo + link).
+    if (alert.alert_type in ("emergency", "holding", "rare", "region")
+            and state.settings.discord_webhook_highlights):
+        hl = alert.model_copy(update={"alert_type": "highlight"})
+        await state.discord.send(hl, photo_url=photo_url, ai_text=ai_text)
+
+
+async def _ai_loop() -> None:
+    """Every minute, ask the local LLM which current aircraft are most interesting;
+    store the picks for the UI and push the top ones to the highlights channel."""
+    await asyncio.sleep(20)
+    while True:
+        try:
+            interval = max(30, state.settings.ollama_insights_interval)
+            picks = await state.ollama.pick_interesting(state.current)
+            by_icao = {a.icao24: a for a in state.current}
+            insights = []
+            for p in picks:
+                a = by_icao.get(p["icao24"])
+                if not a:
+                    continue
+                insights.append({
+                    "icao24": a.icao24,
+                    "callsign": (a.callsign or "").strip(),
+                    "typecode": a.typecode,
+                    "operator": a.operator or a.owner,
+                    "marker_category": a.marker_category,
+                    "reason": p.get("reason", ""),
+                })
+            if insights:
+                state.ai_insights = insights
+                state.ai_insights_ts = time.time()
+                await _broadcast_ai(insights)
+                await _push_highlights(insights, by_icao)
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("AI loop error: %s", exc)
+            await asyncio.sleep(60)
+
+
+async def _push_highlights(insights: list[dict], by_icao: dict) -> None:
+    if not state.settings.discord_webhook_highlights:
+        return
+    for ins in insights[:3]:
+        a = by_icao.get(ins["icao24"])
+        if not a:
+            continue
+        alert = state.alerts.build_alert(
+            a, "highlight", f"✨ AI pick: {ins['reason'] or 'interesting aircraft'}",
+            constants.COLOR_HOLDING, label=ins["reason"], now=time.time(),
+        )
+        # Light cooldown so the same jet isn't re-posted every minute.
+        if not await state.alerts.passes_cooldown(alert):
+            continue
+        photo = await state.photos.get(a.icao24)
+        await state.discord.send(alert, photo_url=(photo or {}).get("thumbnail"),
+                                 ai_text=ins["reason"])
+
+
+async def _broadcast_ai(insights: list[dict]) -> None:
+    await state.ws.broadcast({
+        "type": "ai_insights", "insights": insights, "server_time": time.time(),
+    })
 
 
 async def _region_loop() -> None:
@@ -420,11 +493,115 @@ async def get_states(lamin: float = None, lamax: float = None,
     }
 
 
+@app.get("/api/ai/insights")
+async def ai_insights():
+    return {"insights": state.ai_insights, "updated": state.ai_insights_ts,
+            "enabled": state.settings.ollama_enabled and state.settings.ollama_insights}
+
+
+@app.get("/api/ollama/models")
+async def ollama_models(url: str = None):
+    return {"models": await state.ollama.list_models(url)}
+
+
+# Fields the web settings UI can edit. (group, key, type, label)
+SETTINGS_SCHEMA = [
+    ("Location", "latitude", "number", "Latitude"),
+    ("Location", "longitude", "number", "Longitude"),
+    ("Location", "radius_km", "number", "Alert radius (km)"),
+    ("Map", "map_style", "select:dark-en,dark,german,light,satellite", "Map style"),
+    ("Map", "tracking_mode", "select:viewport,radius,global", "Tracking mode"),
+    ("Map", "max_aircraft", "number", "Max aircraft shown"),
+    ("Map", "public_url", "text", "Public URL (for Discord links)"),
+    ("OpenSky", "opensky_client_id", "text", "OAuth2 client id"),
+    ("OpenSky", "opensky_client_secret", "password", "OAuth2 client secret"),
+    ("OpenSky", "poll_interval", "number", "Poll interval (s, blank=auto)"),
+    ("Discord", "discord_webhook", "text", "Webhook URL"),
+    ("Discord", "discord_webhook_highlights", "text", "Highlights webhook URL"),
+    ("Discord", "discord_photos", "bool", "Attach aircraft photos"),
+    ("Alerts", "alert_emergency", "bool", "Emergency squawks"),
+    ("Alerts", "alert_military", "bool", "Military"),
+    ("Alerts", "alert_rare", "bool", "Rare types"),
+    ("Alerts", "alert_holding", "bool", "Holding patterns"),
+    ("Alerts", "alert_cooldown_minutes", "number", "Cooldown (min)"),
+    ("Alerts", "region_alerts_enabled", "bool", "Region-entry alerts"),
+    ("Alerts", "watch_regions_text", "textarea", "Watch regions (one name per line)"),
+    ("Layers", "weather_enabled", "bool", "Weather radar"),
+    ("Layers", "airports_enabled", "bool", "Airports"),
+    ("Layers", "zones_enabled", "bool", "Conflict zones"),
+    ("Layers", "flight_history_enabled", "bool", "Flight history"),
+    ("Layers", "trail_minutes", "number", "Trail length (min)"),
+    ("Ollama AI", "ollama_enabled", "bool", "Enable Ollama"),
+    ("Ollama AI", "ollama_url", "text", "Ollama URL (e.g. http://server:11434)"),
+    ("Ollama AI", "ollama_model", "text", "Model"),
+    ("Ollama AI", "ollama_insights", "bool", "Minute analysis of all flights"),
+    ("Ollama AI", "ollama_insights_interval", "number", "Analysis interval (s)"),
+]
+_RESTART_KEYS = {"opensky_client_id", "opensky_client_secret", "watch_regions_text",
+                 "region_alerts_enabled", "tracking_mode"}
+
+
+@app.get("/api/settings")
+async def get_settings():
+    s = state.settings
+    values = {}
+    for _g, key, _t, _l in SETTINGS_SCHEMA:
+        if key == "watch_regions_text":
+            values[key] = "\n".join(r.get("name", "") for r in s.watch_regions)
+        else:
+            values[key] = getattr(s, key, None)
+    return {"schema": [{"group": g, "key": k, "type": t, "label": l}
+                       for g, k, t, l in SETTINGS_SCHEMA], "values": values}
+
+
+@app.post("/api/settings")
+async def post_settings(request: Request):
+    body = await request.json()
+    allowed = {k for _g, k, _t, _l in SETTINGS_SCHEMA}
+    updates: dict = {}
+    for key, val in body.items():
+        if key not in allowed:
+            continue
+        if key == "watch_regions_text":
+            names = [ln.strip() for ln in str(val).splitlines() if ln.strip()]
+            updates["watch_regions"] = [{"name": n} for n in names]
+            continue
+        updates[key] = val
+
+    from .config import save_overrides
+    save_overrides(updates, CONFIG_PATH)
+
+    # Apply live by mutating the shared settings object in place.
+    new = load_config(CONFIG_PATH)
+    for field in type(new).model_fields:
+        setattr(state.settings, field, getattr(new, field))
+
+    restart = bool(set(body.keys()) & _RESTART_KEYS)
+    return {"ok": True, "restart_recommended": restart}
+
+
 @app.get("/api/route/{callsign}")
-async def get_route(callsign: str, icao24: str = None):
+async def get_route(callsign: str, icao24: str = None,
+                    lat: float = None, lon: float = None):
     route = await state.routes.get(callsign)
-    # Persist origin/dest onto the aircraft's current flight for the history log.
-    if route and icao24 and state.settings.flight_history_enabled:
+    if not route:
+        return {"route": None}
+
+    # Plausibility: if we know the aircraft position, make sure it's actually on
+    # the corridor between origin and destination. Reused callsigns otherwise
+    # produce nonsense (e.g. a Singapore→Hong Kong route over Europe).
+    plausible = True
+    if lat is not None and lon is not None:
+        o, d = route.get("origin"), route.get("destination")
+        if o and d and o.get("lat") is not None and d.get("lat") is not None:
+            xtk = cross_track_km(lat, lon, o["lat"], o["lon"], d["lat"], d["lon"])
+            near_o = haversine_km(lat, lon, o["lat"], o["lon"]) < 200
+            near_d = haversine_km(lat, lon, d["lat"], d["lon"]) < 200
+            plausible = xtk < 350 or near_o or near_d
+    route["plausible"] = plausible
+
+    # Only persist plausible routes to the flight log.
+    if plausible and icao24 and state.settings.flight_history_enabled:
         o = (route.get("origin") or {}).get("iata") or (route.get("origin") or {}).get("icao")
         d = (route.get("destination") or {}).get("iata") or (route.get("destination") or {}).get("icao")
         if o or d:

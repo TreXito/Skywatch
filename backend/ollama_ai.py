@@ -99,6 +99,48 @@ class OllamaService:
         )
         return await self._generate(prompt)
 
+    async def list_models(self, url: Optional[str] = None) -> list[str]:
+        """List models on an Ollama server (used by the settings UI 'Load models')."""
+        base = (url or self.settings.ollama_url).rstrip("/")
+        try:
+            resp = await self._client.get(f"{base}/api/tags", timeout=8.0)
+            resp.raise_for_status()
+            return [m.get("name") for m in (resp.json().get("models") or []) if m.get("name")]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Ollama list_models failed (%s): %s", base, exc)
+            return []
+
+    async def pick_interesting(self, aircraft_list) -> list[dict]:
+        """Send current traffic to the LLM and get back the most interesting jets.
+
+        Returns [{icao24, reason}] for aircraft the model finds noteworthy.
+        """
+        if not self.enabled or not aircraft_list or not await self.available():
+            return []
+        rows = []
+        for a in aircraft_list[:60]:
+            alt = a.baro_altitude or a.geo_altitude
+            rows.append(
+                f"{a.icao24} | {(a.callsign or '').strip() or '—'} | "
+                f"{a.typecode or '?'} | {a.marker_category} | "
+                f"sq {a.squawk or '—'} | {a.origin_country or '?'} | "
+                f"alt {int(alt) if alt else '?'}m | "
+                f"{(a.operator or a.owner or '').strip()[:30]}"
+            )
+        prompt = (
+            "Below is live air traffic (icao24 | callsign | type | category | squawk "
+            "| country | altitude | operator). Pick the 1-5 MOST interesting aircraft "
+            "(emergencies/special squawks, military, government, rare/heavy types, "
+            "unusual behaviour). Respond ONLY with a JSON array like "
+            '[{"icao24":"abc123","reason":"..."}] – reason max 12 words.\n\n'
+            + "\n".join(rows)
+        )
+        text = await self._generate(prompt,
+                                    system="You output only valid JSON. No prose.")
+        if not text:
+            return []
+        return _parse_json_array(text)
+
     async def digest(self, aircraft_list) -> Optional[str]:
         if not self.enabled or self.settings.ollama_digest_minutes <= 0:
             return None
@@ -122,3 +164,21 @@ _SYSTEM_PROMPT = (
     "You write brief, sharp, factual notes for an enthusiast audience. Never invent "
     "specific facts you cannot infer; keep it to a few sentences."
 )
+
+
+def _parse_json_array(text: str) -> list[dict]:
+    """Leniently extract a JSON array of {icao24, reason} from an LLM response."""
+    import json
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return []
+    try:
+        data = json.loads(text[start:end + 1])
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for item in data if isinstance(data, list) else []:
+        if isinstance(item, dict) and item.get("icao24"):
+            out.append({"icao24": str(item["icao24"]).lower().strip(),
+                        "reason": str(item.get("reason", ""))[:200]})
+    return out

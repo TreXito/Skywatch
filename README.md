@@ -87,6 +87,17 @@ Add Sky Watch as a **custom app**:
 - 🧠 **Local AI (Ollama)** — optional: a local LLM writes a short analysis of each alert
   and sends it along with the webhook
 - ❓ **Squawk decoding** — the detail card explains the transponder code (7700, 7600 …)
+- 🛠️ **Edit everything in the web UI** — a Settings panel changes location, map style,
+  alerts, Discord webhooks, Ollama, etc. live (saved to an overrides file; your
+  commented `config.yaml` is never rewritten)
+- 🧠 **Minute-by-minute AI picks** — a local/remote Ollama analyses all current traffic
+  every minute and surfaces the most interesting aircraft (panel + optional webhook)
+- ✨ **Highlights webhook** — the coolest cases (emergencies, holding, rare, AI picks)
+  post to a dedicated Discord channel with a photo and a deep link that opens this
+  instance focused on that exact aircraft
+- 🛤️ **Trails behind every aircraft** (canvas-rendered) showing where each came from
+- 🧭 **Smooth motion** — eased dead-reckoning (no stutter); routes are sanity-checked
+  against the aircraft's position so reused-callsign nonsense routes are dropped
 - 🗺️ Live Leaflet map, aircraft icons rotated by heading, color-coded by category
 - 🎨 Categories: military (red), emergency (orange), watchlist (yellow), helicopter
   (green), normal (blue), rare (purple), ground vehicle (cyan), balloon (white)
@@ -187,10 +198,16 @@ need them.
 | `region_alerts_enabled` | `true` | Master toggle for region-entry alerts |
 | `flight_history_enabled` | `true` | Record per-aircraft flight history |
 | `trail_minutes` | `180` | How far back the selected aircraft's trail goes |
-| `ollama_enabled` | `false` | Local Ollama AI analysis on alerts |
-| `ollama_url` | `http://localhost:11434` | Ollama server URL |
+| `discord_webhook_highlights` | — | "Coolest cases" channel (photo + deep link) |
+| `ollama_enabled` | `false` | Local/remote Ollama AI analysis on alerts |
+| `ollama_url` | `http://localhost:11434` | Ollama server URL (remote supported) |
 | `ollama_model` | `llama3.1` | Ollama model name (must be pulled) |
+| `ollama_insights` | `true` | Per-minute AI pick of the most interesting aircraft |
+| `ollama_insights_interval` | `60` | Seconds between AI insight passes |
 | `ollama_digest_minutes` | `0` | >0 = periodic AI situation summary to Discord |
+
+> Most of these can also be changed live in the web UI under **🛠️ Settings** (saved to
+> `data/settings_overrides.yaml`, which takes precedence over `config.yaml`).
 | `poll_interval` | auto | Seconds between OpenSky polls (auto: 5 auth / 10 anon) |
 | `default_zoom` | auto | Initial map zoom (auto from radius) |
 | `password` | — | Set to enable **HTTP Basic** auth on the web UI |

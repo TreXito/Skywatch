@@ -67,6 +67,8 @@
       state.airborneOnly = e.target.checked;
       SW.rerender();
     });
+    const allTrails = document.getElementById("toggle-all-trails");
+    if (allTrails) allTrails.addEventListener("change", (e) => SW.setAllTrails(e.target.checked));
   };
 
   SW.rerender = function () {
@@ -174,8 +176,9 @@
     const cs = (ac.callsign || "").trim();
     if (!cs) return;
     try {
-      const res = await fetch(
-        `/api/route/${encodeURIComponent(cs)}?icao24=${ac.icao24}`, SW.fetchOpts());
+      const q = `?icao24=${ac.icao24}` +
+        (ac.latitude != null ? `&lat=${ac.latitude}&lon=${ac.longitude}` : "");
+      const res = await fetch(`/api/route/${encodeURIComponent(cs)}${q}`, SW.fetchOpts());
       const d = await res.json();
       const r = d.route;
       if (!r || (!r.origin && !r.destination)) return;
@@ -186,11 +189,15 @@
       const box = document.getElementById("dc-route");
       if (box) {
         const fmt = (a) => a ? `<b>${a.iata || a.icao || "?"}</b> <span class="muted">${a.city || a.name || ""}</span>` : "—";
+        const warn = r.plausible === false
+          ? ` <span class="route-warn" title="Aircraft position doesn't match this route – likely a reused callsign">⚠ unverified</span>` : "";
         box.innerHTML = `<div class="route-line">
-            <span>${fmt(o)}</span><span class="route-arrow">✈</span><span>${fmt(dst)}</span>
+            <span>${fmt(o)}</span><span class="route-arrow">✈</span><span>${fmt(dst)}</span>${warn}
           </div>${r.airline ? `<div class="muted">${r.airline}</div>` : ""}`;
       }
-      SW.drawRoute(ac, o, dst);
+      // Don't draw a misleading line for an implausible (wrong-callsign) route;
+      // the route layer was already cleared at the start of loadRoute().
+      if (r.plausible !== false) SW.drawRoute(ac, o, dst);
     } catch (e) { /* ignore */ }
   };
 

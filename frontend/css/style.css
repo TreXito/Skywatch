@@ -218,6 +218,31 @@ body.has-selection .ac-marker.focused { opacity: 1; }
 }
 .leaflet-control-layers-toggle { background-color: var(--panel); }
 
+/* ---- Route warning ---- */
+.route-warn { color: #e67e22; font-size: .72rem; }
+
+/* ---- AI picks ---- */
+.ai-item { background: var(--panel-2); border-radius: 8px; padding: .5rem .6rem;
+  margin-bottom: .5rem; cursor: pointer; border-left: 3px solid #9b59b6; }
+.ai-item:hover { border-color: var(--accent); }
+.ai-head { display: flex; align-items: center; gap: .4rem; font-size: .9rem; }
+.ai-reason { color: var(--muted); font-size: .8rem; margin-top: .2rem; }
+#btn-ai.pulse { animation: pulse 1.2s ease-in-out 3; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 3px rgba(155,89,182,.6); } }
+
+/* ---- Settings form ---- */
+.set-group { margin-bottom: .5rem; border: 1px solid var(--border); border-radius: 8px;
+  padding: .3rem .5rem; }
+.set-group summary { cursor: pointer; font-weight: 600; padding: .2rem 0; }
+.set-field { display: flex; flex-direction: column; gap: .2rem; margin: .4rem 0; }
+.set-field label { font-size: .8rem; color: var(--muted); }
+.set-field input, .set-field select, .set-field textarea {
+  width: 100%; padding: .4rem; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); box-sizing: border-box; }
+.settings-actions { display: flex; align-items: center; gap: .6rem; margin-top: .6rem;
+  position: sticky; bottom: 0; background: var(--panel); padding-top: .4rem; }
+#ollama-load { margin-top: .3rem; }
+
 .hidden { display: none !important; }
 
 /* ---- Mobile ---- */

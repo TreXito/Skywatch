@@ -62,6 +62,8 @@
     SW.initAlerts();
     SW.initTools();
     SW.initStats();
+    SW.initAI();
+    SW.initSettings();
     SW.initLayers(config);
     SW.initStates(config);
 
@@ -73,8 +75,8 @@
       SW.darkMode = !SW.darkMode;
       document.body.classList.toggle("dark", SW.darkMode);
       document.body.classList.toggle("light", !SW.darkMode);
-      // Map basemap is changed via the layers control (top-left); this toggles
-      // the UI panels theme only.
+      // Switch the map basemap to match the UI theme (English-label dark/light).
+      if (SW.setTheme) SW.setTheme(SW.darkMode);
     });
 
     // Ask for desktop notification permission (best effort).

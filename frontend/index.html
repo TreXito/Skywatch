@@ -21,8 +21,10 @@
       <input id="search-input" type="text" placeholder="Search callsign / type / icao24…" />
     </div>
     <div class="top-actions">
+      <button id="btn-ai" class="icon-btn" title="AI picks">🧠</button>
       <button id="btn-stats" class="icon-btn" title="Statistics">📊</button>
       <button id="btn-filters" class="icon-btn" title="Filters">⚙️</button>
+      <button id="btn-settings" class="icon-btn" title="Settings">🛠️</button>
       <button id="btn-alerts" class="icon-btn" title="Alert history">🔔<span id="alert-badge" class="badge hidden">0</span></button>
       <button id="btn-locate" class="icon-btn" title="Find my location">📍</button>
       <button id="btn-measure" class="icon-btn" title="Measure distance">📏</button>
@@ -39,8 +41,12 @@
     <div id="category-toggles"></div>
     <hr/>
     <label class="switch-row">
+      <input type="checkbox" id="toggle-all-trails" checked />
+      <span>Show trails behind all aircraft</span>
+    </label>
+    <label class="switch-row">
       <input type="checkbox" id="toggle-trails" checked />
-      <span>Show trail for selected aircraft</span>
+      <span>Full trail for selected aircraft</span>
     </label>
     <label class="switch-row">
       <input type="checkbox" id="toggle-radius" checked />
@@ -75,6 +81,23 @@
     <div id="stats-body"><p class="muted">Loading…</p></div>
   </aside>
 
+  <!-- AI picks panel -->
+  <aside id="ai-panel" class="panel hidden">
+    <h3>🧠 AI Picks</h3>
+    <p class="muted">Most interesting aircraft right now (updated every minute).</p>
+    <div id="ai-body"><p class="muted">Waiting for analysis…</p></div>
+  </aside>
+
+  <!-- Settings panel -->
+  <aside id="settings-panel" class="panel hidden">
+    <h3>Settings</h3>
+    <div id="settings-body"><p class="muted">Loading…</p></div>
+    <div class="settings-actions">
+      <button id="settings-save" class="mini-btn">💾 Save</button>
+      <span id="settings-status" class="muted"></span>
+    </div>
+  </aside>
+
   <!-- Aircraft detail popup is rendered by Leaflet; this is the selected-card -->
   <section id="detail-card" class="hidden"></section>
 
@@ -104,6 +127,8 @@
   <script src="/js/stats.js"></script>
   <script src="/js/tools.js"></script>
   <script src="/js/states.js"></script>
+  <script src="/js/ai.js"></script>
+  <script src="/js/settings.js"></script>
   <script src="/js/websocket.js"></script>
   <script src="/js/app.js"></script>
 </body>

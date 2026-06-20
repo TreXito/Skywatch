@@ -9,6 +9,7 @@ env/
 
 # Sky Watch runtime
 config.yaml
+settings_overrides.yaml
 data/*
 !data/.gitkeep
 logs/*

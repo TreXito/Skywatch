@@ -1,6 +1,6 @@
 import textwrap
 
-from backend.config import load_config, Settings
+from backend.config import load_config, Settings, save_overrides
 
 
 def test_defaults_with_only_location(tmp_path):
@@ -61,3 +61,25 @@ def test_webhook_routing():
                  discord_webhook_emergency="emer")
     assert s.webhook_for("emergency") == "emer"
     assert s.webhook_for("military") == "default"
+
+
+def test_highlight_webhook_routing():
+    s = Settings(latitude=1, longitude=1, discord_webhook="d",
+                 discord_webhook_highlights="hl")
+    assert s.webhook_for("highlight") == "hl"
+    s2 = Settings(latitude=1, longitude=1, discord_webhook="d")
+    assert s2.webhook_for("highlight") == "d"  # falls back
+
+
+def test_settings_overrides_merge(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"latitude: 1\nlongitude: 2\ndata_dir: {tmp_path.as_posix()}\n",
+                   encoding="utf-8")
+    # Before overrides: defaults.
+    assert load_config(cfg).map_style == "dark-en"
+    save_overrides({"map_style": "german", "max_aircraft": 1234}, cfg)
+    s = load_config(cfg)
+    assert s.map_style == "german"
+    assert s.max_aircraft == 1234
+    # Original config.yaml is untouched (no map_style written into it).
+    assert "map_style" not in cfg.read_text(encoding="utf-8")

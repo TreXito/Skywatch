@@ -50,6 +50,11 @@ discord_webhook: ""
 #
 # Discord extras
 # discord_photos: true  # attach an aircraft photo to alert embeds
+# discord_webhook_highlights: ""  # "coolest cases" channel (photo + deep link)
+#
+# 💡 Almost everything here can also be edited live in the web UI (🛠️ Settings) –
+#    those changes are saved to data/settings_overrides.yaml and this file is left
+#    untouched.
 #
 # Region-entry alerts – ping when ANY aircraft enters a region. Use a built-in
 # gazetteer name (Ukraine, Israel, Gaza, Syria, Russia, …) or custom coordinates.
@@ -63,8 +68,10 @@ discord_webhook: ""
 # Local Ollama AI analysis (adds a short AI note to Discord alerts).
 # Needs Ollama running locally and the model pulled (e.g. `ollama pull llama3.1`).
 # ollama_enabled: false
-# ollama_url: "http://localhost:11434"
+# ollama_url: "http://localhost:11434"   # remote works too, e.g. http://server:11434
 # ollama_model: "llama3.1"
+# ollama_insights: true            # every minute: AI picks the most interesting jets
+# ollama_insights_interval: 60     # seconds between AI passes
 # ollama_digest_minutes: 0   # >0 = periodic AI situation summary to Discord
 #
 # Flight history / trails (FlightRadar24-like, for observed aircraft)

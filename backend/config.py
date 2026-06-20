@@ -42,6 +42,9 @@ class Settings(BaseModel):
     # Optional dedicated webhooks per alert type; falls back to discord_webhook.
     discord_webhook_emergency: str = ""
     discord_webhook_military: str = ""
+    # "Highlights" channel for the coolest events (emergencies, holding, rare, AI
+    # picks) – always with photo + a deep link to this instance focused on the jet.
+    discord_webhook_highlights: str = ""
 
     # --- watchlist ---
     watchlist: List[WatchlistEntry] = Field(default_factory=list)
@@ -92,6 +95,8 @@ class Settings(BaseModel):
     ollama_model: str = "llama3.1"
     ollama_analyze_alerts: bool = True   # analyse each alert and add to webhook
     ollama_digest_minutes: int = 0       # 0 = off; periodic situation digest
+    ollama_insights: bool = True         # every minute: AI picks the coolest jets
+    ollama_insights_interval: int = 60   # seconds between AI insight passes
 
     # --- flight trails / history (FlightRadar24-like) ---
     flight_history_enabled: bool = True
@@ -187,6 +192,8 @@ class Settings(BaseModel):
         return Path(self.log_dir)
 
     def webhook_for(self, alert_type: str) -> str:
+        if alert_type == "highlight":
+            return self.discord_webhook_highlights or self.discord_webhook
         if alert_type == "emergency" and self.discord_webhook_emergency:
             return self.discord_webhook_emergency
         if alert_type == "military" and self.discord_webhook_military:
@@ -216,6 +223,33 @@ class Settings(BaseModel):
         return out
 
 
+def overrides_path(raw: dict) -> Path:
+    """Where UI-managed setting overrides live (inside the data dir)."""
+    return Path(raw.get("data_dir", "data")) / "settings_overrides.yaml"
+
+
+def save_overrides(updates: dict, base_path: str | Path = "config.yaml") -> None:
+    """Merge `updates` into the overrides file written by the settings UI.
+
+    Kept separate from config.yaml so the user's hand-written, commented config
+    file is never rewritten/clobbered. Overrides win at load time.
+    """
+    raw: dict = {}
+    p = Path(base_path)
+    if p.exists():
+        with p.open("r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    ov_path = overrides_path(raw)
+    current: dict = {}
+    if ov_path.exists():
+        with ov_path.open("r", encoding="utf-8") as f:
+            current = yaml.safe_load(f) or {}
+    current.update(updates)
+    ov_path.parent.mkdir(parents=True, exist_ok=True)
+    with ov_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(current, f, sort_keys=False, allow_unicode=True)
+
+
 def load_config(path: str | Path = "config.yaml") -> Settings:
     """Load settings from YAML. Missing file or missing location → safe defaults.
 
@@ -232,6 +266,17 @@ def load_config(path: str | Path = "config.yaml") -> Settings:
             raw = {}
     else:
         logger.warning("config.yaml not found at %s; using defaults", path)
+
+    # Merge UI-managed overrides on top of config.yaml (overrides win).
+    ov_path = overrides_path(raw)
+    if ov_path.exists():
+        try:
+            with ov_path.open("r", encoding="utf-8") as f:
+                overrides = yaml.safe_load(f) or {}
+            if isinstance(overrides, dict):
+                raw.update(overrides)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read settings overrides: %s", exc)
 
     # Provide a bootable default location so the app can run unconfigured.
     raw.setdefault("latitude", 0.0)
