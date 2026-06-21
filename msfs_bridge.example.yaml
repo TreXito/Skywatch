@@ -15,12 +15,12 @@ msfs_bridge:
   # bridge is allowed to POST. Leave empty if you have no auth.
   api_token: ""
 
-  # Optional: Discord STATUS (Rich Presence) – shows under your name like a game:
+  # Discord STATUS (Rich Presence) – shows under your name like a game:
   #   "Playing Microsoft Flight Simulator 2024 — Flying a Cessna 172 · Vienna → …"
-  # Setup (one-off): discord.com/developers → New Application → name it
-  #   "Microsoft Flight Simulator 2024" → copy the Application (Client) ID here.
-  #   Then:  pip install pypresence
-  # Needs the Discord desktop app running on this PC.
+  # Works out of the box (an app id is baked into the bridge) – just run:
+  #   pip install pypresence
+  # and have the Discord desktop app running. Leave this empty to use the built-in
+  # app, or paste your own Discord Application ID to show your own app name.
   discord_rpc_client_id: ""
 
   # (Optional, separate) post to a Discord CHANNEL via webhook instead/as well.

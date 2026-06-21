@@ -31,15 +31,21 @@ except ImportError:
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = os.path.join(HERE, "msfs_bridge.yaml")
 
+# Baked-in Discord application (like a Minecraft mod ships its own) so Rich
+# Presence works out of the box – no setup needed. Override in config if you want
+# your own app name. Just `pip install pypresence` and have Discord running.
+DEFAULT_RPC_CLIENT_ID = "1518340901808767126"
+
 
 def load_config(path: str) -> dict:
     cfg = {
         "server_url": "http://192.168.0.250:15000/api/msfs_position",
         "poll_interval_seconds": 2,
         "api_token": "",          # Sky Watch web password / token, if auth is on
-        # Optional: live "now flying" status on Discord (everyone can follow along).
-        # Rich Presence shows it under YOUR name ("Playing …") like a game status.
-        "discord_rpc_client_id": "",      # a Discord app Client ID (see README)
+        # Live "now flying" status on Discord (Rich Presence, under your name like a
+        # game). Works out of the box – just `pip install pypresence`. Leave empty to
+        # use the baked-in app; set your own Discord app id only if you want.
+        "discord_rpc_client_id": DEFAULT_RPC_CLIENT_ID,
         # (Optional, separate) channel webhook post – usually you want RPC, not this.
         "discord_webhook": "",
         "discord_name": "A pilot",
@@ -52,6 +58,9 @@ def load_config(path: str) -> dict:
     else:
         print(f"[!] No config at {path} – using defaults. Copy "
               f"msfs_bridge.example.yaml -> msfs_bridge.yaml and edit it.")
+    # An empty/blank id in an older config still uses the baked-in app.
+    if not str(cfg.get("discord_rpc_client_id", "")).strip():
+        cfg["discord_rpc_client_id"] = DEFAULT_RPC_CLIENT_ID
     return cfg
 
 
@@ -238,6 +247,8 @@ class DiscordPresence:
         self.start = 0.0
         self.departure = ""
         self.last = 0.0
+        self._gaveup = False
+        self._warned = False
 
     @property
     def enabled(self) -> bool:
@@ -246,13 +257,22 @@ class DiscordPresence:
     def _connect(self) -> bool:
         if self.rpc:
             return True
+        if self._gaveup:
+            return False
         try:
             from pypresence import Presence
+        except ImportError:
+            if not self._warned:
+                print("[*] Discord status off – run 'pip install pypresence' to enable it.")
+                self._warned = True
+            self._gaveup = True
+            return False
+        try:
             self.rpc = Presence(self.client_id)
             self.rpc.connect()
             print("[+] Discord Rich Presence connected.")
             return True
-        except Exception as exc:  # noqa: BLE001 – Discord not running / no lib
+        except Exception:  # noqa: BLE001 – Discord client not running yet; retry later
             self.rpc = None
             return False
 
