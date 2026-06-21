@@ -22,8 +22,9 @@ MIN_FLIGHT_S = 60.0          # ignore taxi blips
 
 
 class MsfsLogger:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, search=None):
         self.db = db
+        self.search = search
         self._airborne = False
         self._slow_since: Optional[float] = None
         self._flight: Optional[dict] = None     # {start_ts, aircraft, max_alt, ...}
@@ -78,8 +79,13 @@ class MsfsLogger:
         dist = sum(haversine_km(coords[i][1], coords[i][0], coords[i + 1][1],
                                 coords[i + 1][0]) for i in range(len(coords) - 1))
         dep, arr = self._track[0], self._track[-1]
-        dep_ap = await self.db.nearest_airport(dep[1], dep[0])
-        arr_ap = await self.db.nearest_airport(arr[1], arr[0])
+        # Prefer human place names (town), fall back to nearest airport.
+        dep_ap = arr_ap = None
+        if self.search:
+            dep_ap = await self.search.reverse_geocode(dep[1], dep[0])
+            arr_ap = await self.search.reverse_geocode(arr[1], arr[0])
+        dep_ap = dep_ap or await self.db.nearest_airport(dep[1], dep[0])
+        arr_ap = arr_ap or await self.db.nearest_airport(arr[1], arr[0])
         geojson = json.dumps({
             "type": "Feature",
             "properties": {"aircraft": f["aircraft"], "start_ts": f["start_ts"],

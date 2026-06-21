@@ -24,6 +24,7 @@ class SearchService:
             follow_redirects=True,
         )
         self._img_cache: dict[str, Optional[str]] = {}
+        self._geo_cache: dict[tuple, Optional[str]] = {}
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -56,7 +57,8 @@ class SearchService:
             return []
 
     async def image(self, query: str) -> Optional[str]:
-        """First image result from SearXNG image search (for the MSFS aircraft type)."""
+        """An image URL for a query (e.g. aircraft type), chosen to be one Discord
+        can actually proxy: HTTPS only, preferring reliable hosts (Wikimedia)."""
         if not self.enabled or not query.strip():
             return None
         if query in self._img_cache:
@@ -69,19 +71,48 @@ class SearchService:
                         "safesearch": 1},
             )
             resp.raise_for_status()
-            url = None
-            for r in (resp.json() or {}).get("results", [])[:5]:
-                url = r.get("img_src") or r.get("thumbnail_src")
-                if url:
-                    if url.startswith("//"):
-                        url = "https:" + url
-                    break
+            candidates = []
+            for r in (resp.json() or {}).get("results", [])[:25]:
+                u = r.get("img_src") or r.get("thumbnail_src") or ""
+                if u.startswith("//"):
+                    u = "https:" + u
+                if u.startswith("https://"):     # Discord requires https
+                    candidates.append(u)
+            # Prefer Wikimedia/Wikipedia (CDN, hotlink + proxy friendly).
+            url = next((u for u in candidates if "wikimedia.org" in u or "wikipedia" in u),
+                       candidates[0] if candidates else None)
             if len(self._img_cache) > 200:
                 self._img_cache.clear()
             self._img_cache[query] = url
             return url
         except Exception as exc:  # noqa: BLE001
             logger.warning("SearXNG image search failed: %s", exc)
+            return None
+
+    async def reverse_geocode(self, lat: float, lon: float) -> Optional[str]:
+        """Nearest town/place name for a coordinate (OpenStreetMap Nominatim).
+        Cached by rounded coords to respect Nominatim's rate limit."""
+        key = (round(lat, 2), round(lon, 2))
+        if key in self._geo_cache:
+            return self._geo_cache[key]
+        try:
+            resp = await self._client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 12,
+                        "addressdetails": 1},
+            )
+            resp.raise_for_status()
+            data = resp.json() or {}
+            a = data.get("address", {})
+            name = (a.get("city") or a.get("town") or a.get("village")
+                    or a.get("municipality") or a.get("county") or a.get("state")
+                    or data.get("name"))
+            if len(self._geo_cache) > 500:
+                self._geo_cache.clear()
+            self._geo_cache[key] = name
+            return name
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Reverse geocode failed: %s", exc)
             return None
 
     async def about_aircraft(self, insight: dict, n: int = 10) -> list[dict]:

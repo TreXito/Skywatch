@@ -143,9 +143,9 @@ class DiscordReporter:
 
     def _nearest(self, lat, lon) -> str:
         try:
-            r = self.session.get(f"{self.base}/api/nearest_airport",
+            r = self.session.get(f"{self.base}/api/nearest_place",
                                   params={"lat": lat, "lon": lon}, timeout=4)
-            return (r.json().get("airport") or "an unknown spot")
+            return (r.json().get("place") or "an unknown spot")
         except Exception:  # noqa: BLE001
             return "an unknown spot"
 
@@ -299,9 +299,9 @@ class DiscordPresence:
 
     def _nearest(self, lat, lon) -> str:
         try:
-            r = self.session.get(f"{self.base}/api/nearest_airport",
+            r = self.session.get(f"{self.base}/api/nearest_place",
                                  params={"lat": lat, "lon": lon}, timeout=4)
-            return r.json().get("airport") or ""
+            return r.json().get("place") or ""
         except Exception:  # noqa: BLE001
             return ""
 

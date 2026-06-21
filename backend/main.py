@@ -112,7 +112,7 @@ async def _startup() -> None:
     state.routes = RouteService(settings)
     state.ollama = OllamaService(settings)
     state.search = SearchService(settings)
-    state.msfs_logger = MsfsLogger(db)
+    state.msfs_logger = MsfsLogger(db, state.search)
 
     # Load metadata + airports DBs (non-blocking failure tolerated) in the
     # background so the web UI is responsive immediately.
@@ -720,6 +720,12 @@ async def image_search(q: str):
 @app.get("/api/nearest_airport")
 async def nearest_airport(lat: float, lon: float):
     return {"airport": await state.db.nearest_airport(lat, lon, max_km=30)}
+
+
+@app.get("/api/nearest_place")
+async def nearest_place(lat: float, lon: float):
+    """Nearest town/place name (human-readable, e.g. 'Scharnstein')."""
+    return {"place": await state.search.reverse_geocode(lat, lon)}
 
 
 @app.get("/api/msfs/flights")
