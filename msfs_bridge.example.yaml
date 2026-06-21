@@ -6,11 +6,11 @@
 
 msfs_bridge:
   # Where your Sky Watch server is on the LAN (note the /api/msfs_position path).
-  server_url: "http://192.168.0.250:15000/api/msfs_position"
+  server_url: "http://ip:port/api/msfs_position"
 
   # How often to read + send the position (seconds).
   poll_interval_seconds: 2
 
   # If your Sky Watch web UI is password-protected, put that password here so the
   # bridge is allowed to POST. Leave empty if you have no auth.
-  api_token: "REDACTED"
+  api_token: ""
