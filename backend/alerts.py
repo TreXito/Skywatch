@@ -203,6 +203,14 @@ class AlertEngine:
     def is_special(self, a: Aircraft) -> bool:
         return self.special_label(a) is not None
 
+    def is_ping_worthy(self, a: Aircraft) -> bool:
+        """Only the most extreme aircraft (NOT a DC-3 / common warbird)."""
+        tc = (a.typecode or "").upper()
+        if tc in constants.PING_TYPECODES:
+            return True
+        cs = (a.callsign or "").upper().strip()
+        return any(cs.startswith(p) for p in constants.PING_CALLSIGNS)
+
     def _rare_label(self, a: Aircraft) -> Optional[str]:
         tc = (a.typecode or "").upper()
         sp = self.special_label(a)

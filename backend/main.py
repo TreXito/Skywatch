@@ -217,10 +217,11 @@ def _is_mega_cool(alert, aircraft) -> bool:
 
 
 def _is_coolest(alert, aircraft) -> bool:
-    """The very coolest — worth an @mention: emergencies and special aircraft."""
+    """The very coolest — worth an @mention: emergencies and the most extreme
+    aircraft only (E-4B, U-2, An-124, Concorde… NOT a DC-3 or common warbird)."""
     if alert.alert_type == "emergency":
         return True
-    return bool(aircraft and state.alerts.is_special(aircraft))
+    return bool(aircraft and state.alerts.is_ping_worthy(aircraft))
 
 
 async def _dispatch_alert(alert, aircraft) -> None:

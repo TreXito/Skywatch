@@ -95,17 +95,29 @@
 
     // Focus an aircraft if ?focus=icao24 is in the URL (from Discord links).
     const focus = new URLSearchParams(location.search).get("focus");
-    if (focus) {
-      SW._pendingFocus = focus.toLowerCase();
-      const tryFocus = setInterval(() => {
-        if (SW.map.markers[SW._pendingFocus]) {
-          SW.focusAircraft(SW._pendingFocus);
-          clearInterval(tryFocus);
-        }
-      }, 1000);
-      setTimeout(() => clearInterval(tryFocus), 30000);
-    }
+    if (focus) SW.focusFromLink(focus.toLowerCase());
   }
+
+  // Deep-link focus: fly to the aircraft's last known position (so the viewport
+  // loads it) and select it once its marker shows up.
+  SW.focusFromLink = async function (icao) {
+    let flew = false;
+    if (SW.map.markers[icao]) { SW.focusAircraft(icao); flew = true; }
+    if (!flew) {
+      try {
+        const res = await fetch(`/api/track/${icao}`, SW.fetchOpts());
+        const d = await res.json();
+        const t = (d.track || []);
+        const last = t[t.length - 1];
+        if (last) { SW.map.leaflet.setView([last.latitude, last.longitude], 8); flew = true; }
+      } catch (e) { /* ignore */ }
+    }
+    const tryFocus = setInterval(() => {
+      if (SW.map.markers[icao]) { SW.selectAircraft(icao); clearInterval(tryFocus); }
+    }, 1000);
+    setTimeout(() => clearInterval(tryFocus), 40000);
+    if (!flew) SW.fetchViewport && SW.fetchViewport();
+  };
 
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", boot);

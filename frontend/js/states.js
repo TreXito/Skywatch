@@ -9,33 +9,13 @@
 
   SW.initStates = function (config) {
     if (SW.trackingMode === "radius") return; // WebSocket handles markers
-    const lf = SW.map.leaflet;
-    // Longer debounce + significant-move gate so casually panning around doesn't
-    // fire a fetch (and burn OpenSky credits) on every little move.
-    const trigger = () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(() => { if (movedEnough()) SW.fetchViewport(); }, 1200);
-    };
-    lf.on("moveend", trigger);
+    // Time-based refresh ONLY: the map refetches the current view on a fixed
+    // timer, never on pan/zoom. Panning around therefore costs no extra OpenSky
+    // credits; new areas fill in on the next tick.
     SW.fetchViewport();
     const iv = Math.max(15, config.poll_interval || 30) * 1000;
     timer = setInterval(SW.fetchViewport, iv);
   };
-
-  // Only refetch if the view changed meaningfully (new area or zoom), not for
-  // small pans within the area we already loaded.
-  function movedEnough() {
-    const lf = SW.map.leaflet;
-    const b = lf.getBounds();
-    if (!lastBounds) return true;
-    if (lf.getZoom() !== lastBounds.zoom) return true;
-    // If the new center is still well inside the previously fetched bounds, skip.
-    const c = b.getCenter();
-    const lb = lastBounds.b;
-    const inside = lb.contains(c);
-    const grew = !lb.contains(b.getNorthEast()) || !lb.contains(b.getSouthWest());
-    return !inside || grew;
-  }
 
   SW.fetchViewport = async function () {
     if (inFlight) return;

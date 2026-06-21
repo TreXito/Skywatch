@@ -27,11 +27,10 @@
   // ---------------------------------------------------------------- basemaps
   const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
   function esriCanvas(shade) {
+    // Clean dark/light canvas (base + subtle English labels), no busy road overlay.
     return L.layerGroup([
       L.tileLayer(`${ESRI}/Canvas/World_${shade}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
         { maxZoom: 16, attribution: "Tiles &copy; Esri" }),
-      L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`,
-        { maxZoom: 16 }),
       L.tileLayer(`${ESRI}/Canvas/World_${shade}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
         { maxZoom: 16 }),
     ]);
@@ -298,14 +297,11 @@
       const a = e.data;
       if (!a || a.on_ground || !a.velocity || a.true_track == null || e.anchorLat == null) continue;
       const age = (now - e.anchorTime) / 1000;
-      if (age > 120) continue;
-      // Gentle, capped forward lead so markers glide calmly instead of racing far
-      // ahead between (now infrequent) server updates.
-      const lead = Math.min(age, 15);
-      const [tlat, tlon] = destPoint(e.anchorLat, e.anchorLon, a.velocity * lead, a.true_track);
-      e.dispLat += (tlat - e.dispLat) * 0.1;
-      e.dispLon += (tlon - e.dispLon) * 0.1;
-      e.marker.setLatLng([e.dispLat, e.dispLon]);
+      if (age > 90) continue;  // stop extrapolating very stale data
+      // Move at the REAL ground speed: position = anchor + velocity * elapsed,
+      // set directly (no easing). This is exactly real-time, so it never races.
+      const [tlat, tlon] = destPoint(e.anchorLat, e.anchorLon, a.velocity * age, a.true_track);
+      e.marker.setLatLng([tlat, tlon]);
     }
   }
 

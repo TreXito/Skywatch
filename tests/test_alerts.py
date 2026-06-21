@@ -84,6 +84,17 @@ def test_special_typecode_label():
     assert "Lancaster" in (eng._rare_label(Aircraft(icao24="x", typecode="LANC")) or "")
 
 
+def test_ping_only_for_brutal_aircraft():
+    eng = make_engine()
+    assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="E4"))      # Doomsday
+    assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="A124"))    # An-124
+    assert eng.is_ping_worthy(Aircraft(icao24="x", callsign="NIGHTWATCH01"))
+    # A DC-3 / common warbird is special but NOT ping-worthy.
+    assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="DC3"))
+    assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="L39"))
+    assert eng.is_special(Aircraft(icao24="x", typecode="DC3"))         # still special
+
+
 def test_special_callsign_label():
     eng = make_engine()
     assert "VIP" in (eng.special_label(Aircraft(icao24="x", callsign="SPAR19")) or "")

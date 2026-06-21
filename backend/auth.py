@@ -111,8 +111,8 @@ _TOKEN_LOGIN_PAGE = """<!doctype html>
          background:#3498db;color:#fff;font-weight:600;cursor:pointer}
 </style></head><body>
 <form class="card" onsubmit="event.preventDefault();
-  document.cookie='skywatch_token='+encodeURIComponent(t.value)+';path=/';
-  location.href='/';">
+  document.cookie='skywatch_token='+encodeURIComponent(t.value)+';path=/;max-age=31536000';
+  location.reload();">
   <h1>🛫 Sky Watch</h1>
   <p>Enter the password:</p>
   <input id="t" type="password" placeholder="Password" autofocus>

@@ -141,13 +141,14 @@ class DiscordNotifier:
                 a.timestamp or datetime.now().timestamp(), tz=timezone.utc
             ).isoformat(),
         }
-        # Big static map showing exactly where the aircraft is.
+        # Big static map showing exactly where the aircraft is (Yandex – keyless
+        # and reliable; note ll/pt take lon,lat order).
         if a.latitude is not None and a.longitude is not None:
             embed["image"] = {
                 "url": (
-                    "https://staticmap.openstreetmap.de/staticmap.php?center="
-                    f"{a.latitude},{a.longitude}&zoom=7&size=600x300&markers="
-                    f"{a.latitude},{a.longitude},red-pushpin"
+                    "https://static-maps.yandex.ru/1.x/?l=map&z=6&size=600,300"
+                    f"&ll={a.longitude},{a.latitude}"
+                    f"&pt={a.longitude},{a.latitude},pm2rdm"
                 )
             }
         return embed

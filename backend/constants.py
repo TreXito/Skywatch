@@ -130,6 +130,18 @@ SPECIAL_TYPECODES = {
     "E6B": "Boeing E-6B Mercury — nuclear command relay (TACAMO)",
 }
 
+# Only these truly extreme aircraft earn an @mention ping (a DC-3 or a common
+# warbird does NOT). The broader SPECIAL_* lists still flag/alert; this is tighter.
+PING_TYPECODES = {
+    "E4", "E6", "E6B",                      # airborne nuclear command posts
+    "U2", "RC35", "RC135", "RQ4", "GHWK",   # strategic recon / spyplanes
+    "A124", "A225",                          # Antonov outsize
+    "A37X", "A337", "A3ST", "B74R", "BLCF",  # Beluga / Dreamlifter
+    "CONC",                                  # Concorde
+    "B29", "B17", "LANC",                    # 1-of-a-kind WWII heavies
+}
+PING_CALLSIGNS = {"NIGHTWATCH", "IRON99", "ORDER"}  # Doomsday / nuclear C3
+
 # Callsign prefixes that mark a notable flight, with context shown as the reason.
 SPECIAL_CALLSIGNS = {
     "NIGHTWATCH": "E-4B 'Nightwatch' — airborne nuclear command post",
