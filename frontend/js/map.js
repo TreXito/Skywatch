@@ -22,7 +22,8 @@
     selected: null, config: null,
   };
   SW.map = map;
-  SW.showAllTrails = true;
+  SW.showAllTrails = false;   // trails only for the aircraft you click
+  SW.selTrail = [];           // full track of the selected aircraft
 
   // ---------------------------------------------------------------- basemaps
   const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
@@ -212,7 +213,15 @@
       const moving = !ac.on_ground && ac.velocity && ac.true_track != null;
       if (!moving) { entry.dispLat = ac.latitude; entry.dispLon = ac.longitude;
         entry.marker.setLatLng([ac.latitude, ac.longitude]); }
-      if (selected) entry.marker.setZIndexOffset(1000);
+      if (selected) {
+        entry.marker.setZIndexOffset(1000);
+        // Grow the selected aircraft's trail live as new positions arrive.
+        const last = SW.selTrail[SW.selTrail.length - 1];
+        if (!last || last[0] !== ac.latitude || last[1] !== ac.longitude) {
+          SW.selTrail.push([ac.latitude, ac.longitude]);
+          SW.drawSelTrail();
+        }
+      }
       updateTrail(entry, ac);
     });
 
@@ -312,8 +321,10 @@
 
   // ---------------------------------------------------------------- selection
   SW.selectAircraft = function (icao24) {
+    SW.simSelected = false;          // selecting a real aircraft clears the SIM card
     const prev = map.selected;
     map.selected = icao24;
+    SW.selTrail = [];                 // fresh trail for the newly clicked aircraft
     if (prev && map.markers[prev]) {
       const e = map.markers[prev];
       e.marker.setIcon(iconFor(e.data, false));
@@ -354,22 +365,29 @@
     }, 1000);
   };
 
-  // Full historical trail for the selected aircraft (from the server DB).
+  // Seed the selected aircraft's trail with its full recorded history, then it
+  // keeps growing live (see updateAircraft) until you deselect / it disappears.
   SW.refreshTrail = async function () {
     if (!map.selected) return;
-    const tt = document.getElementById("toggle-trails");
-    if (tt && !tt.checked) { SW.clearTrail(); return; }
     try {
       const res = await fetch(`/api/track/${map.selected}`, SW.fetchOpts());
       const data = await res.json();
-      const pts = (data.track || []).map((p) => [p.latitude, p.longitude]);
+      SW.selTrail = (data.track || []).map((p) => [p.latitude, p.longitude]);
       const cur = map.markers[map.selected];
-      if (cur) pts.push(cur.marker.getLatLng());
-      SW.clearTrail();
-      if (pts.length > 1)
-        map.trailLine = L.polyline(pts, { color: SELECTED_COLOR, weight: 2.5, opacity: .9 }).addTo(map.leaflet);
+      if (cur) SW.selTrail.push([cur.marker.getLatLng().lat, cur.marker.getLatLng().lng]);
+      SW.drawSelTrail();
     } catch (e) { /* ignore */ }
   };
+
+  SW.drawSelTrail = function () {
+    const tt = document.getElementById("toggle-trails");
+    if (tt && !tt.checked) { SW.clearTrail(); return; }
+    SW.clearTrail();
+    if (SW.selTrail.length > 1)
+      map.trailLine = L.polyline(SW.selTrail, { color: SELECTED_COLOR, weight: 2.5,
+        opacity: .9 }).addTo(map.leaflet);
+  };
+
   SW.clearTrail = function () {
     if (map.trailLine) { map.leaflet.removeLayer(map.trailLine); map.trailLine = null; }
   };

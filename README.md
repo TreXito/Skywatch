@@ -85,6 +85,18 @@ your Startup folder): you can instead create a Task Scheduler task → *Trigger:
 → *Action:* `pythonw.exe C:\path\to\msfs_bridge.py`. Remove autostart with
 `python msfs_bridge.py --uninstall-autostart`.
 
+Click your **SIM marker** for the same detail overlay as real aircraft (photo, speed,
+altitude, heading…). Browse every flight you've ever flown under **🎮 My MSFS Flights**
+(route via nearest airports, distance, duration, max altitude/speed, one-click replay).
+
+**Live Discord status (optional):** the bridge can set your **Discord Rich Presence**
+("Playing Microsoft Flight Simulator 2024 — Flying a Cessna 172 · Vienna → Salzburg ·
+240 km/h"), in plain English. One-off setup: create an app at
+[discord.com/developers](https://discord.com/developers/applications), name it
+*Microsoft Flight Simulator 2024*, copy its **Application (Client) ID** into
+`discord_rpc_client_id`, then `pip install pypresence`. (A channel webhook post is also
+available via `discord_webhook`.)
+
 API: `POST /api/msfs_position` (bridge → server), `GET /api/msfs_position` (current),
 `GET /api/msfs/flights` + `GET /api/msfs/flights/{id}` (logged flights / GeoJSON track).
 

@@ -14,3 +14,17 @@ msfs_bridge:
   # If your Sky Watch web UI is password-protected, put that password here so the
   # bridge is allowed to POST. Leave empty if you have no auth.
   api_token: ""
+
+  # Optional: Discord STATUS (Rich Presence) – shows under your name like a game:
+  #   "Playing Microsoft Flight Simulator 2024 — Flying a Cessna 172 · Vienna → …"
+  # Setup (one-off): discord.com/developers → New Application → name it
+  #   "Microsoft Flight Simulator 2024" → copy the Application (Client) ID here.
+  #   Then:  pip install pypresence
+  # Needs the Discord desktop app running on this PC.
+  discord_rpc_client_id: ""
+
+  # (Optional, separate) post to a Discord CHANNEL via webhook instead/as well.
+  # Usually you want the status above, not this. Leave empty to disable.
+  discord_webhook: ""
+  discord_name: "TreXito"
+  discord_update_seconds: 60

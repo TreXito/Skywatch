@@ -37,6 +37,13 @@ def load_config(path: str) -> dict:
         "server_url": "http://192.168.0.250:15000/api/msfs_position",
         "poll_interval_seconds": 2,
         "api_token": "",          # Sky Watch web password / token, if auth is on
+        # Optional: live "now flying" status on Discord (everyone can follow along).
+        # Rich Presence shows it under YOUR name ("Playing …") like a game status.
+        "discord_rpc_client_id": "",      # a Discord app Client ID (see README)
+        # (Optional, separate) channel webhook post – usually you want RPC, not this.
+        "discord_webhook": "",
+        "discord_name": "A pilot",
+        "discord_update_seconds": 60,
     }
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -92,6 +99,213 @@ def _f(v):
         return None
 
 
+_COMPASS = ["North", "North-East", "East", "South-East",
+            "South", "South-West", "West", "North-West"]
+
+
+def _compass(deg) -> str:
+    try:
+        return _COMPASS[round(float(deg) / 45) % 8]
+    except (TypeError, ValueError):
+        return "—"
+
+
+class DiscordReporter:
+    """Posts a friendly, plain-English 'now flying' status to Discord and keeps it
+    updated, so anyone can follow along (not just aviation nerds)."""
+
+    AIRBORNE_KTS = 50
+
+    def __init__(self, cfg: dict, session: requests.Session, server_base: str):
+        self.webhook = cfg.get("discord_webhook", "")
+        self.name = cfg.get("discord_name", "A pilot")
+        self.every = max(20, int(cfg.get("discord_update_seconds", 60)))
+        self.session = session
+        self.base = server_base
+        self.flying = False
+        self.msg_id = None
+        self.departure = "somewhere"
+        self.start = 0.0
+        self.last_edit = 0.0
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.webhook)
+
+    def _nearest(self, lat, lon) -> str:
+        try:
+            r = self.session.get(f"{self.base}/api/nearest_airport",
+                                  params={"lat": lat, "lon": lon}, timeout=4)
+            return (r.json().get("airport") or "an unknown spot")
+        except Exception:  # noqa: BLE001
+            return "an unknown spot"
+
+    def update(self, pos: dict) -> None:
+        if not self.enabled:
+            return
+        speed = pos.get("true_airspeed_kts") or 0
+        airborne = (not pos.get("on_ground")) and speed > self.AIRBORNE_KTS
+        now = time.time()
+        if airborne and not self.flying:
+            self.flying = True
+            self.start = now
+            self.departure = self._nearest(pos["latitude"], pos["longitude"])
+            self._post_takeoff(pos)
+        elif self.flying and airborne and now - self.last_edit >= self.every:
+            self._edit_inflight(pos)
+        elif self.flying and pos.get("on_ground") and speed < self.AIRBORNE_KTS:
+            self._post_landing(pos)
+            self.flying = False
+            self.msg_id = None
+
+    @staticmethod
+    def _speeds(kts):
+        kmh = round((kts or 0) * 1.852)
+        mph = round((kts or 0) * 1.151)
+        return f"{kmh} km/h ({mph} mph)"
+
+    @staticmethod
+    def _alts(ft):
+        m = round((ft or 0) * 0.3048)
+        return f"{m:,} m ({round(ft or 0):,} ft) high"
+
+    def _embed(self, pos, title, desc, color):
+        return {"title": title, "description": desc, "color": color, "fields": [
+            {"name": "Aircraft", "value": pos.get("aircraft") or "Unknown", "inline": True},
+            {"name": "Speed", "value": self._speeds(pos.get("true_airspeed_kts")), "inline": True},
+            {"name": "Altitude", "value": self._alts(pos.get("altitude_ft")), "inline": True},
+            {"name": "Heading", "value": f"{_compass(pos.get('heading'))}", "inline": True},
+        ], "footer": {"text": "Live from Microsoft Flight Simulator · Sky Watch"}}
+
+    def _post_takeoff(self, pos):
+        e = self._embed(pos, f"✈️ {self.name} just took off!",
+                        f"**{self.name}** is now flying a **{pos.get('aircraft') or 'plane'}**, "
+                        f"departing from **{self.departure}**. Follow along below!", 0x00B3FF)
+        try:
+            r = self.session.post(self.webhook + "?wait=true", json={"embeds": [e]}, timeout=6)
+            self.msg_id = (r.json() or {}).get("id")
+            self.last_edit = time.time()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[!] Discord takeoff post failed: {exc}")
+
+    def _edit_inflight(self, pos):
+        near = self._nearest(pos["latitude"], pos["longitude"])
+        mins = round((time.time() - self.start) / 60)
+        e = self._embed(pos, f"✈️ {self.name} is flying",
+                        f"**{self.name}** is flying a **{pos.get('aircraft') or 'plane'}**, "
+                        f"now near **{near}** — {mins} min since takeoff from **{self.departure}**.",
+                        0x00B3FF)
+        try:
+            if self.msg_id:
+                self.session.patch(f"{self.webhook}/messages/{self.msg_id}",
+                                   json={"embeds": [e]}, timeout=6)
+            self.last_edit = time.time()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[!] Discord update failed: {exc}")
+
+    def _post_landing(self, pos):
+        arr = self._nearest(pos["latitude"], pos["longitude"])
+        mins = round((time.time() - self.start) / 60)
+        e = {"title": f"🛬 {self.name} has landed!",
+             "description": f"**{self.name}** landed at **{arr}** after a "
+                            f"{mins}-minute flight from **{self.departure}** in a "
+                            f"**{pos.get('aircraft') or 'plane'}**. Nice one!",
+             "color": 0x2ECC71,
+             "footer": {"text": "Live from Microsoft Flight Simulator · Sky Watch"}}
+        try:
+            if self.msg_id:
+                self.session.patch(f"{self.webhook}/messages/{self.msg_id}",
+                                   json={"embeds": [e]}, timeout=6)
+            else:
+                self.session.post(self.webhook, json={"embeds": [e]}, timeout=6)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[!] Discord landing post failed: {exc}")
+
+
+class DiscordPresence:
+    """Discord Rich Presence – shows the flight as YOUR status ('Playing …'), like a
+    game. Plain English so anyone gets it. Needs the local Discord client running
+    and a Discord app Client ID (pip install pypresence)."""
+
+    AIRBORNE_KTS = 50
+
+    def __init__(self, cfg: dict, session: requests.Session, server_base: str):
+        self.client_id = str(cfg.get("discord_rpc_client_id", "")).strip()
+        self.session = session
+        self.base = server_base
+        self.rpc = None
+        self.flying = False
+        self.start = 0.0
+        self.departure = ""
+        self.last = 0.0
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.client_id)
+
+    def _connect(self) -> bool:
+        if self.rpc:
+            return True
+        try:
+            from pypresence import Presence
+            self.rpc = Presence(self.client_id)
+            self.rpc.connect()
+            print("[+] Discord Rich Presence connected.")
+            return True
+        except Exception as exc:  # noqa: BLE001 – Discord not running / no lib
+            self.rpc = None
+            return False
+
+    def _nearest(self, lat, lon) -> str:
+        try:
+            r = self.session.get(f"{self.base}/api/nearest_airport",
+                                 params={"lat": lat, "lon": lon}, timeout=4)
+            return r.json().get("airport") or ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def update(self, pos: dict) -> None:
+        if not self.enabled or not self._connect():
+            return
+        speed = pos.get("true_airspeed_kts") or 0
+        airborne = (not pos.get("on_ground")) and speed > self.AIRBORNE_KTS
+        now = time.time()
+        if airborne and not self.flying:
+            self.flying = True
+            self.start = now
+            self.departure = self._nearest(pos["latitude"], pos["longitude"])
+        if not airborne and self.flying and pos.get("on_ground"):
+            self.flying = False
+        if now - self.last < 15:
+            return
+        self.last = now
+
+        aircraft = pos.get("aircraft") or "a plane"
+        try:
+            if self.flying:
+                kmh = round(speed * 1.852)
+                m = round((pos.get("altitude_ft") or 0) * 0.3048)
+                near = self._nearest(pos["latitude"], pos["longitude"])
+                route = f"{self.departure or '?'} → {near}" if near else (self.departure or "")
+                details = f"Flying a {aircraft}"[:128]
+                state = f"{route} · {kmh} km/h · {m} m high".strip(" ·")[:128]
+                self.rpc.update(details=details, state=state, start=int(self.start),
+                                large_text="Microsoft Flight Simulator 2024")
+            else:
+                self.rpc.update(details="On the ground", state=aircraft[:128],
+                                large_text="Microsoft Flight Simulator 2024")
+        except Exception:  # noqa: BLE001 – Discord closed
+            self.rpc = None
+
+    def close(self) -> None:
+        try:
+            if self.rpc:
+                self.rpc.clear()
+                self.rpc.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def run(cfg: dict) -> None:
     from SimConnect import SimConnect, AircraftRequests  # imported lazily
 
@@ -101,8 +315,12 @@ def run(cfg: dict) -> None:
     if cfg.get("api_token"):
         headers["Authorization"] = f"Bearer {cfg['api_token']}"
     session = requests.Session()
+    server_base = url.split("/api/")[0]
+    discord = DiscordReporter(cfg, session, server_base)   # optional channel webhook
+    presence = DiscordPresence(cfg, session, server_base)  # Discord status (RPC)
 
-    print(f"[*] Sky Watch MSFS bridge → {url} (every {interval}s)")
+    extras = ("  +RPC" if presence.enabled else "") + ("  +webhook" if discord.enabled else "")
+    print(f"[*] Sky Watch MSFS bridge → {url} (every {interval}s){extras}")
     sm = None
     aq = None
     while True:
@@ -119,6 +337,11 @@ def run(cfg: dict) -> None:
                     session.post(url, json=pos, headers=headers, timeout=5)
                 except requests.RequestException as exc:
                     print(f"[!] POST failed: {exc}")
+                for reporter in (discord, presence):
+                    try:
+                        reporter.update(pos)
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[!] Discord error: {exc}")
             time.sleep(interval)
 
         except KeyboardInterrupt:

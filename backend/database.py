@@ -129,7 +129,10 @@ class Database:
                 max_alt_ft   REAL,
                 max_speed_kts REAL,
                 points       INTEGER DEFAULT 0,
-                track_geojson TEXT
+                track_geojson TEXT,
+                distance_km  REAL,
+                dep_lat REAL, dep_lon REAL, arr_lat REAL, arr_lon REAL,
+                dep_airport TEXT, arr_airport TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_msfs_flights_ts ON msfs_flights (end_ts);
 
@@ -139,7 +142,38 @@ class Database:
             );
             """
         )
+        # Migrate older msfs_flights tables (add columns if missing).
+        for col, decl in [
+            ("distance_km", "REAL"), ("dep_lat", "REAL"), ("dep_lon", "REAL"),
+            ("arr_lat", "REAL"), ("arr_lon", "REAL"),
+            ("dep_airport", "TEXT"), ("arr_airport", "TEXT"),
+        ]:
+            try:
+                await self._db.execute(f"ALTER TABLE msfs_flights ADD COLUMN {col} {decl}")
+            except Exception:  # noqa: BLE001 – column already exists
+                pass
         await self._db.commit()
+
+    async def nearest_airport(self, lat: float, lon: float, max_km: float = 12.0):
+        """Closest airport (name + codes) to a point, or None. Uses a bbox prefilter."""
+        assert self._db
+        d = max_km / 111.0
+        async with self._db.execute(
+            "SELECT name, icao, iata, latitude, longitude FROM airports "
+            "WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
+            (lat - d, lat + d, lon - d * 2, lon + d * 2),
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+        best, best_d = None, max_km
+        for r in rows:
+            from .utils import haversine_km
+            dist = haversine_km(lat, lon, r["latitude"], r["longitude"])
+            if dist < best_d:
+                best, best_d = r, dist
+        if not best:
+            return None
+        code = best.get("iata") or best.get("icao")
+        return f"{best['name']}" + (f" ({code})" if code else "")
 
     # ----------------------------------------------------------- metadata DB
 
@@ -363,24 +397,26 @@ class Database:
 
     # ----------------------------------------------------------- MSFS flights
 
-    async def save_msfs_flight(self, aircraft, start_ts, end_ts, max_alt, max_spd,
-                               points, track_geojson) -> int:
+    async def save_msfs_flight(self, **f) -> int:
         assert self._db
         cur = await self._db.execute(
             "INSERT INTO msfs_flights (aircraft, start_ts, end_ts, duration_s, "
-            "max_alt_ft, max_speed_kts, points, track_geojson) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (aircraft, start_ts, end_ts, end_ts - start_ts, max_alt, max_spd,
-             points, track_geojson),
+            "max_alt_ft, max_speed_kts, points, track_geojson, distance_km, "
+            "dep_lat, dep_lon, arr_lat, arr_lon, dep_airport, arr_airport) "
+            "VALUES (:aircraft, :start_ts, :end_ts, :duration_s, :max_alt_ft, "
+            ":max_speed_kts, :points, :track_geojson, :distance_km, :dep_lat, "
+            ":dep_lon, :arr_lat, :arr_lon, :dep_airport, :arr_airport)",
+            f,
         )
         await self._db.commit()
         return cur.lastrowid
 
-    async def recent_msfs_flights(self, limit: int = 50) -> list[dict]:
+    async def recent_msfs_flights(self, limit: int = 200) -> list[dict]:
         assert self._db
         async with self._db.execute(
             "SELECT id, aircraft, start_ts, end_ts, duration_s, max_alt_ft, "
-            "max_speed_kts, points FROM msfs_flights ORDER BY end_ts DESC LIMIT ?",
+            "max_speed_kts, points, distance_km, dep_airport, arr_airport "
+            "FROM msfs_flights ORDER BY end_ts DESC LIMIT ?",
             (limit,),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]

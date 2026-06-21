@@ -2,7 +2,7 @@
    distinct marker, and lets you replay logged flights. */
 (function () {
   const SW = (window.SkyWatch = window.SkyWatch || {});
-  let marker = null, replayLine = null;
+  let marker = null, replayLine = null, last = null;
 
   SW.initMsfs = function () {
     if (!SW.features || !SW.features.msfs) return;
@@ -29,11 +29,12 @@
         return;
       }
       const p = d.position;
+      last = p;
       const pos = [p.latitude, p.longitude];
       if (!marker) {
         marker = L.marker(pos, { icon: simIcon(p.heading), zIndexOffset: 2000 })
           .addTo(SW.map.leaflet);
-        marker.on("click", () => marker.openPopup());
+        marker.on("click", (e) => { L.DomEvent.stop(e); SW.selectSim(); });
       } else {
         marker.setLatLng(pos);
         marker.setIcon(simIcon(p.heading));
@@ -42,34 +43,109 @@
       const spd = p.true_airspeed_kts != null ? `${Math.round(p.true_airspeed_kts)} kts` : "—";
       marker.bindTooltip(`🎮 ${p.aircraft || "My flight"} · ${alt} · ${spd}`,
         { direction: "top", offset: [0, -12] });
+      if (SW.simSelected) SW.renderSimDetail(p);   // keep the open card fresh
     } catch (e) { /* ignore */ }
   };
 
-  // --- Flight replay (logged MSFS flights) ---
+  // Click the SIM marker → same kind of detail overlay as the real aircraft.
+  SW.selectSim = function () {
+    if (!last) return;
+    SW.selectAircraft(null);          // clear any real selection
+    SW.simSelected = true;
+    SW.map.leaflet.panTo([last.latitude, last.longitude]);
+    SW.renderSimDetail(last);
+  };
+
+  SW.renderSimDetail = function (p) {
+    const card = document.getElementById("detail-card");
+    if (!card) return;
+    const model = p.aircraft || "My aircraft";
+    const altFt = p.altitude_ft != null ? Math.round(p.altitude_ft).toLocaleString() + " ft" : "—";
+    const altM = p.altitude_ft != null ? ` (${Math.round(p.altitude_ft * 0.3048).toLocaleString()} m)` : "";
+    const kts = p.true_airspeed_kts != null ? Math.round(p.true_airspeed_kts) : null;
+    const spd = kts != null ? `${kts} kts (${Math.round(kts * 1.852)} km/h)` : "—";
+    const vs = p.vertical_speed_fpm != null ? `${Math.round(p.vertical_speed_fpm)} fpm` : "—";
+    const rows = [
+      ["Aircraft", model],
+      ["Altitude", altFt + altM],
+      ["Speed", spd],
+      ["Vertical speed", vs],
+      ["Heading", p.heading != null ? `${Math.round(p.heading)}°` : "—"],
+      ["Squawk", p.squawk || "—"],
+      ["Status", p.on_ground ? "On ground" : "Airborne"],
+      ["Position", `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`],
+    ];
+    card.innerHTML = `
+      <h3><span class="cat-swatch" style="background:#00e5ff"></span> 🎮 SIM
+        <span class="dc-close" onclick="SkyWatch.closeSim()">✕</span></h3>
+      <div class="muted">${model} · live from MSFS2024</div>
+      <div class="dc-photo" id="dc-photo"></div>
+      <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>`;
+    card.classList.remove("hidden");
+    SW.loadSimPhoto(model);
+  };
+
+  SW.closeSim = function () {
+    SW.simSelected = false;
+    document.getElementById("detail-card").classList.add("hidden");
+  };
+
+  let lastPhotoModel = null;
+  SW.loadSimPhoto = async function (model) {
+    const box = document.getElementById("dc-photo");
+    if (!box) return;
+    if (model === lastPhotoModel && SW._simPhotoUrl) {     // avoid refetching each poll
+      box.innerHTML = `<img src="${SW._simPhotoUrl}" alt="${model}"/>`;
+      return;
+    }
+    lastPhotoModel = model;
+    try {
+      const res = await fetch(`/api/image?q=${encodeURIComponent(model + " aircraft")}`, SW.fetchOpts());
+      const d = await res.json();
+      if (d.url && document.getElementById("dc-photo")) {
+        SW._simPhotoUrl = d.url;
+        document.getElementById("dc-photo").innerHTML = `<img src="${d.url}" alt="${model}"/>`;
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  // --- MSFS flights browser (dedicated panel) ---
   SW.injectMsfsFlights = function () {
-    const panel = document.getElementById("filter-panel");
-    if (!panel || document.getElementById("msfs-flights")) return;
-    const box = document.createElement("div");
-    box.innerHTML = `<hr/><div class="muted">🎮 My MSFS flights</div>
-      <div id="msfs-flights"><span class="muted">—</span></div>`;
-    panel.appendChild(box);
-    SW.loadMsfsFlights();
-    document.getElementById("btn-filters")?.addEventListener("click", SW.loadMsfsFlights);
+    const btn = document.getElementById("btn-msfs");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".panel").forEach((p) => {
+        if (p.id !== "msfs-panel") p.classList.add("hidden");
+      });
+      const show = document.getElementById("msfs-panel").classList.toggle("hidden") === false;
+      if (show) SW.loadMsfsFlights();
+    });
   };
 
   SW.loadMsfsFlights = async function () {
-    const el = document.getElementById("msfs-flights");
+    const el = document.getElementById("msfs-body");
     if (!el) return;
     try {
       const res = await fetch("/api/msfs/flights", SW.fetchOpts());
       const fl = (await res.json()).flights || [];
-      if (!fl.length) { el.innerHTML = '<span class="muted">No flights logged yet.</span>'; return; }
-      el.innerHTML = fl.slice(0, 15).map((f) => {
+      if (!fl.length) { el.innerHTML = '<p class="muted">No flights logged yet. Fly in MSFS and they\'ll appear here.</p>'; return; }
+      el.innerHTML = fl.map((f) => {
         const d = new Date(f.start_ts * 1000);
         const min = Math.round((f.duration_s || 0) / 60);
-        return `<div class="flight-item" style="cursor:pointer" onclick="SkyWatch.replayMsfs(${f.id})">
-          <span>${f.aircraft || "Flight"}</span>
-          <span class="muted">${d.toLocaleDateString()} · ${min} min · ${Math.round(f.max_alt_ft || 0).toLocaleString()} ft</span>
+        const route = (f.dep_airport || f.arr_airport)
+          ? `<div class="ai-reason">🛫 ${f.dep_airport || "?"} → 🛬 ${f.arr_airport || "?"}</div>` : "";
+        const stats = [
+          `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+          `${min} min`,
+          f.distance_km ? `${Math.round(f.distance_km)} km` : null,
+          f.max_alt_ft ? `${Math.round(f.max_alt_ft).toLocaleString()} ft` : null,
+          f.max_speed_kts ? `${Math.round(f.max_speed_kts)} kts` : null,
+        ].filter(Boolean).join(" · ");
+        return `<div class="ai-item" onclick="SkyWatch.replayMsfs(${f.id})">
+          <div class="ai-head"><span class="cat-swatch" style="background:#00e5ff"></span>
+            <b>${f.aircraft || "Flight"}</b></div>
+          ${route}
+          <div class="muted" style="font-size:.72rem">${stats}</div>
         </div>`;
       }).join("");
     } catch (e) { /* ignore */ }

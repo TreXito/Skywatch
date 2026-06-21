@@ -73,15 +73,26 @@ class MsfsLogger:
         self._slow_since = None
         if not f or now - f["start_ts"] < MIN_FLIGHT_S or len(self._track) < 2:
             return
+        from .utils import haversine_km
+        coords = [[p[0], p[1]] for p in self._track]
+        dist = sum(haversine_km(coords[i][1], coords[i][0], coords[i + 1][1],
+                                coords[i + 1][0]) for i in range(len(coords) - 1))
+        dep, arr = self._track[0], self._track[-1]
+        dep_ap = await self.db.nearest_airport(dep[1], dep[0])
+        arr_ap = await self.db.nearest_airport(arr[1], arr[0])
         geojson = json.dumps({
             "type": "Feature",
             "properties": {"aircraft": f["aircraft"], "start_ts": f["start_ts"],
-                           "end_ts": now},
-            "geometry": {"type": "LineString",
-                         "coordinates": [[p[0], p[1]] for p in self._track]},
+                           "end_ts": now, "departure": dep_ap, "arrival": arr_ap,
+                           "distance_km": round(dist, 1)},
+            "geometry": {"type": "LineString", "coordinates": coords},
         })
         fid = await self.db.save_msfs_flight(
-            f["aircraft"], f["start_ts"], now, f["max_alt"], f["max_spd"],
-            len(self._track), geojson)
-        logger.info("MSFS flight #%s saved (%s, %d pts, %.0f min)",
-                    fid, f["aircraft"], len(self._track), (now - f["start_ts"]) / 60)
+            aircraft=f["aircraft"], start_ts=f["start_ts"], end_ts=now,
+            duration_s=now - f["start_ts"], max_alt_ft=f["max_alt"],
+            max_speed_kts=f["max_spd"], points=len(self._track),
+            track_geojson=geojson, distance_km=round(dist, 1),
+            dep_lat=dep[1], dep_lon=dep[0], arr_lat=arr[1], arr_lon=arr[0],
+            dep_airport=dep_ap, arr_airport=arr_ap)
+        logger.info("MSFS flight #%s saved (%s, %s→%s, %.0f km, %d pts)",
+                    fid, f["aircraft"], dep_ap, arr_ap, dist, len(self._track))

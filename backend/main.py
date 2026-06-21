@@ -198,7 +198,7 @@ async def _process(aircraft: list[Aircraft]) -> None:
         enriched.append(a)
 
     state.current = enriched
-    await state.db.record_sightings(enriched)
+    await _record_sightings(enriched)
     if state.settings.flight_history_enabled:
         await state.db.update_flights(enriched)
 
@@ -496,6 +496,26 @@ async def _handle_region_entry(a: Aircraft, region: dict) -> None:
     })
 
 
+_sighting_seen: dict[str, float] = {}
+
+
+async def _record_sightings(aircraft: list[Aircraft]) -> None:
+    """Record positions (for trails), deduped to ~1 point / 30s per aircraft so
+    every visible aircraft builds a full trail without bloating the database."""
+    now = time.time()
+    fresh = []
+    for a in aircraft:
+        if a.latitude is None:
+            continue
+        if now - _sighting_seen.get(a.icao24, 0) >= 30:
+            _sighting_seen[a.icao24] = now
+            fresh.append(a)
+    if len(_sighting_seen) > 100_000:
+        _sighting_seen.clear()
+    if fresh:
+        await state.db.record_sightings(fresh)
+
+
 async def _broadcast_snapshot(aircraft: list[Aircraft], new_alerts=None) -> None:
     payload = {
         "type": "update",
@@ -637,6 +657,9 @@ async def get_states(lamin: float = None, lamax: float = None,
         out.sort(key=lambda a: haversine_km(clat, clon, a.latitude, a.longitude))
         out = out[: s.max_aircraft]
 
+    # Record positions so any aircraft you can see has a full clickable trail.
+    await _record_sightings(out)
+
     return {
         "aircraft": [a.model_dump() for a in out],
         "status": state.opensky.status.as_dict(),
@@ -686,6 +709,17 @@ async def get_msfs_position():
     if not m or time.time() - m.get("server_time", 0) > 15:
         return {"active": False}
     return {"active": True, "position": m}
+
+
+@app.get("/api/image")
+async def image_search(q: str):
+    """First image for a query (via SearXNG) – used for the MSFS aircraft photo."""
+    return {"url": await state.search.image(q)}
+
+
+@app.get("/api/nearest_airport")
+async def nearest_airport(lat: float, lon: float):
+    return {"airport": await state.db.nearest_airport(lat, lon, max_km=30)}
 
 
 @app.get("/api/msfs/flights")
@@ -827,8 +861,9 @@ async def get_route(callsign: str, icao24: str = None,
 
 @app.get("/api/track/{icao24}")
 async def get_track(icao24: str):
-    since = time.time() - state.settings.trail_minutes * 60
-    points = await state.db.recent_track(icao24, since)
+    # Full recorded track (only bounded by history retention), so a clicked
+    # aircraft shows its whole trail – not just the last N minutes.
+    points = await state.db.recent_track(icao24, 0)
     return {"icao24": icao24.lower(), "track": points}
 
 
