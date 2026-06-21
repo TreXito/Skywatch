@@ -486,7 +486,13 @@ async def auth_middleware(request: Request, call_next):
     # Static assets and API share the same wall; health is always open.
     if hasattr(state, "auth") and not state.auth.is_authorized(request):
         return state.auth.challenge()
-    return await call_next(request)
+    response = await call_next(request)
+    # Make browsers revalidate the app shell + assets so a redeploy is picked up
+    # immediately (no stale cached JS/CSS). They still get a 304 when unchanged.
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # --- REST API ---
