@@ -69,6 +69,7 @@
     SW.initStats();
     SW.initAI();
     SW.initSettings();
+    SW.initMsfs();
     SW.initLayers(config);
     SW.initStates(config);
 

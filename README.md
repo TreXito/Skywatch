@@ -54,6 +54,40 @@ docker run -d --name skywatch -p 8080:8080 \
 
 ---
 
+## Fly yourself: MSFS2024 on the map
+
+Show **your own aircraft from Microsoft Flight Simulator 2024** live on the Sky Watch
+map, next to the real OpenSky traffic. A tiny bridge runs on your gaming PC and pushes
+your position to the server. No MSFS plugin/mod/setting needed — SimConnect attaches
+automatically when the sim is running.
+
+**On the Windows gaming PC** (where MSFS runs):
+
+```bash
+pip install SimConnect requests PyYAML
+copy msfs_bridge.example.yaml msfs_bridge.yaml   # edit: server_url + password
+python msfs_bridge.py --install-autostart        # start hidden at every logon
+python msfs_bridge.py                            # or run it now
+```
+
+Edit `msfs_bridge.yaml`:
+- `server_url`: your Sky Watch URL + `/api/msfs_position` (e.g. `http://192.168.0.250:15000/api/msfs_position`)
+- `api_token`: your Sky Watch web password (if auth is on)
+
+The bridge waits quietly until MSFS is running, reconnects automatically, and never
+crashes the sim. Your aircraft appears as a glowing **cyan "SIM" marker** (it simply
+isn't shown when the sim is off). Each flight (takeoff → landing, auto-detected) is
+logged to SQLite with its track as GeoJSON — replay them from the filter panel
+(🎮 *My MSFS flights*).
+
+**Autostart alternatives** to `--install-autostart` (which drops a hidden launcher in
+your Startup folder): you can instead create a Task Scheduler task → *Trigger: At log on*
+→ *Action:* `pythonw.exe C:\path\to\msfs_bridge.py`. Remove autostart with
+`python msfs_bridge.py --uninstall-autostart`.
+
+API: `POST /api/msfs_position` (bridge → server), `GET /api/msfs_position` (current),
+`GET /api/msfs/flights` + `GET /api/msfs/flights/{id}` (logged flights / GeoJSON track).
+
 ## TrueNAS Scale
 
 Add Sky Watch as a **custom app**:

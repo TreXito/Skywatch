@@ -76,6 +76,21 @@ class Aircraft(BaseModel):
         )
 
 
+class MsfsPosition(BaseModel):
+    """Own-aircraft position pushed from MSFS2024 via the SimConnect bridge."""
+
+    latitude: float
+    longitude: float
+    altitude_ft: Optional[float] = None
+    true_airspeed_kts: Optional[float] = None
+    heading: Optional[float] = None          # degrees true
+    vertical_speed_fpm: Optional[float] = None
+    aircraft: Optional[str] = None
+    squawk: Optional[str] = None
+    on_ground: bool = False
+    server_time: float = 0.0
+
+
 class AlertRecord(BaseModel):
     """A triggered alert, stored in history and sent to Discord."""
 

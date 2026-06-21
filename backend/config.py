@@ -126,6 +126,9 @@ class Settings(BaseModel):
     flight_history_enabled: bool = True
     trail_minutes: int = 180             # how far back the selected trail goes
 
+    # --- MSFS2024 own-aircraft (via the SimConnect bridge) ---
+    msfs_enabled: bool = True
+
     # --- alert toggles ---
     alert_emergency: bool = True
     alert_military: bool = True

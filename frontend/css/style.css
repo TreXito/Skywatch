@@ -243,6 +243,15 @@ body.has-selection .ac-marker.focused { opacity: 1; }
   position: sticky; bottom: 0; background: var(--panel); padding-top: .4rem; }
 .ollama-actions { display: flex; align-items: center; gap: .4rem; margin-top: .3rem; flex-wrap: wrap; }
 
+/* ---- MSFS own-aircraft (SIM) marker ---- */
+.sim-marker { position: relative; width: 30px; height: 30px; }
+.sim-marker svg { filter: drop-shadow(0 0 5px #00e5ff) drop-shadow(0 0 9px #00e5ff); }
+.sim-badge {
+  position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+  background: #00e5ff; color: #002; font-size: 8px; font-weight: 700;
+  padding: 0 3px; border-radius: 4px; letter-spacing: .5px;
+}
+
 .hidden { display: none !important; }
 
 /* ---- Mobile ---- */

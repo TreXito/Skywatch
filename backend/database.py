@@ -120,6 +120,19 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_flights_icao
                 ON flights (icao24, end_ts);
 
+            CREATE TABLE IF NOT EXISTS msfs_flights (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                aircraft     TEXT,
+                start_ts     REAL NOT NULL,
+                end_ts       REAL NOT NULL,
+                duration_s   REAL,
+                max_alt_ft   REAL,
+                max_speed_kts REAL,
+                points       INTEGER DEFAULT 0,
+                track_geojson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_msfs_flights_ts ON msfs_flights (end_ts);
+
             CREATE TABLE IF NOT EXISTS meta_info (
                 key   TEXT PRIMARY KEY,
                 value TEXT
@@ -347,6 +360,38 @@ class Database:
             (icao24.lower(), limit),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
+
+    # ----------------------------------------------------------- MSFS flights
+
+    async def save_msfs_flight(self, aircraft, start_ts, end_ts, max_alt, max_spd,
+                               points, track_geojson) -> int:
+        assert self._db
+        cur = await self._db.execute(
+            "INSERT INTO msfs_flights (aircraft, start_ts, end_ts, duration_s, "
+            "max_alt_ft, max_speed_kts, points, track_geojson) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (aircraft, start_ts, end_ts, end_ts - start_ts, max_alt, max_spd,
+             points, track_geojson),
+        )
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def recent_msfs_flights(self, limit: int = 50) -> list[dict]:
+        assert self._db
+        async with self._db.execute(
+            "SELECT id, aircraft, start_ts, end_ts, duration_s, max_alt_ft, "
+            "max_speed_kts, points FROM msfs_flights ORDER BY end_ts DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def msfs_flight_track(self, flight_id: int) -> Optional[str]:
+        assert self._db
+        async with self._db.execute(
+            "SELECT track_geojson FROM msfs_flights WHERE id = ?", (flight_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return row["track_geojson"] if row else None
 
     # ----------------------------------------------------------- alerts
 

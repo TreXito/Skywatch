@@ -1,0 +1,16 @@
+# Sky Watch – MSFS2024 bridge config (runs on the Windows gaming PC).
+# Copy this to  msfs_bridge.yaml  and edit. Then:
+#   pip install SimConnect requests PyYAML
+#   python msfs_bridge.py --install-autostart   # starts automatically at logon
+#   python msfs_bridge.py                        # or run it manually
+
+msfs_bridge:
+  # Where your Sky Watch server is on the LAN (note the /api/msfs_position path).
+  server_url: "http://192.168.0.250:15000/api/msfs_position"
+
+  # How often to read + send the position (seconds).
+  poll_interval_seconds: 2
+
+  # If your Sky Watch web UI is password-protected, put that password here so the
+  # bridge is allowed to POST. Leave empty if you have no auth.
+  api_token: "REDACTED"

@@ -24,7 +24,8 @@ from .config import Settings, load_config
 from .database import Database
 from .discord_notifier import DiscordNotifier
 from .enrichment import Enricher
-from .models import Aircraft
+from .models import Aircraft, MsfsPosition
+from .msfs import MsfsLogger
 from .opensky import OpenSkyClient
 from .ollama_ai import OllamaService
 from .photos import PhotoService
@@ -63,6 +64,8 @@ class AppState:
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.global_interesting: list[Aircraft] = []
+        self.msfs: dict | None = None        # latest own-aircraft position (MSFS)
+        self.msfs_logger: MsfsLogger
         self.region_seen: dict[str, set] = {}
         self.ai_insights: list[dict] = []
         self.ai_insights_ts: float = 0.0
@@ -109,6 +112,7 @@ async def _startup() -> None:
     state.routes = RouteService(settings)
     state.ollama = OllamaService(settings)
     state.search = SearchService(settings)
+    state.msfs_logger = MsfsLogger(db)
 
     # Load metadata + airports DBs (non-blocking failure tolerated) in the
     # background so the web UI is responsive immediately.
@@ -578,6 +582,7 @@ async def get_config():
             "routes": s.routes_enabled,
             "flights": s.flight_history_enabled,
             "ollama": s.ollama_enabled,
+            "msfs": s.msfs_enabled,
         },
     }
 
@@ -660,6 +665,40 @@ async def interesting():
         "count": len(state.global_interesting),
         "server_time": time.time(),
     }
+
+
+@app.post("/api/msfs_position")
+async def post_msfs_position(pos: MsfsPosition):
+    """Receive own-aircraft position from the MSFS SimConnect bridge."""
+    pos.server_time = time.time()
+    state.msfs = pos.model_dump()
+    try:
+        await state.msfs_logger.update(pos)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("MSFS logger error: %s", exc)
+    return {"ok": True}
+
+
+@app.get("/api/msfs_position")
+async def get_msfs_position():
+    """Latest MSFS position, or inactive if no recent update (sim not running)."""
+    m = state.msfs
+    if not m or time.time() - m.get("server_time", 0) > 15:
+        return {"active": False}
+    return {"active": True, "position": m}
+
+
+@app.get("/api/msfs/flights")
+async def get_msfs_flights():
+    return {"flights": await state.db.recent_msfs_flights()}
+
+
+@app.get("/api/msfs/flights/{flight_id}")
+async def get_msfs_flight_track(flight_id: int):
+    track = await state.db.msfs_flight_track(flight_id)
+    if not track:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(content=track, media_type="application/geo+json")
 
 
 @app.get("/api/ollama/models")
