@@ -29,6 +29,7 @@ from .opensky import OpenSkyClient
 from .ollama_ai import OllamaService
 from .photos import PhotoService
 from .routes import RouteService
+from .search import SearchService
 from .utils import (bounding_box, cross_track_km, haversine_km, setup_logging,
                     zoom_for_radius)
 from .weather import WeatherService
@@ -58,6 +59,7 @@ class AppState:
         self.zones: ZoneService
         self.routes: RouteService
         self.ollama: OllamaService
+        self.search: SearchService
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.global_interesting: list[Aircraft] = []
@@ -106,6 +108,7 @@ async def _startup() -> None:
     state.zones = ZoneService(settings)
     state.routes = RouteService(settings)
     state.ollama = OllamaService(settings)
+    state.search = SearchService(settings)
 
     # Load metadata + airports DBs (non-blocking failure tolerated) in the
     # background so the web UI is responsive immediately.
@@ -133,8 +136,8 @@ async def _shutdown() -> None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-    for closer in (state.opensky, state.discord, state.weather,
-                   state.photos, state.zones, state.routes, state.ollama):
+    for closer in (state.opensky, state.discord, state.weather, state.photos,
+                   state.zones, state.routes, state.ollama, state.search):
         with contextlib.suppress(Exception):
             await closer.close()
     with contextlib.suppress(Exception):
@@ -204,11 +207,30 @@ async def _process(aircraft: list[Aircraft]) -> None:
     await _broadcast_snapshot(enriched, new_alerts=alerts)
 
 
+def _is_mega_cool(alert, aircraft) -> bool:
+    """Only genuinely cool events earn a Discord ping: emergencies, the curated
+    'special' aircraft, watchlist hits, and region entries. Generic military/rare
+    stay on the map + AI panel only."""
+    if alert.alert_type in ("emergency", "watchlist", "region"):
+        return True
+    return bool(aircraft and state.alerts.is_special(aircraft))
+
+
+def _is_coolest(alert, aircraft) -> bool:
+    """The very coolest — worth an @mention: emergencies and special aircraft."""
+    if alert.alert_type == "emergency":
+        return True
+    return bool(aircraft and state.alerts.is_special(aircraft))
+
+
 async def _dispatch_alert(alert, aircraft) -> None:
-    """Record, log, and send an alert to Discord with photo + optional AI note."""
+    """Record + log every alert; only push the mega-cool ones to Discord."""
     await state.db.record_alert(alert)
     logger.info("ALERT [%s] %s (%s)", alert.alert_type, alert.title, alert.icao24)
+
     if not state.discord.enabled:
+        return
+    if state.settings.discord_only_mega and not _is_mega_cool(alert, aircraft):
         return
 
     photo_url = None
@@ -227,13 +249,8 @@ async def _dispatch_alert(alert, aircraft) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("Ollama analysis failed: %s", exc)
 
-    await state.discord.send(alert, photo_url=photo_url, ai_text=ai_text)
-
-    # The coolest cases also go to the dedicated highlights channel (photo + link).
-    if (alert.alert_type in ("emergency", "holding", "rare", "region")
-            and state.settings.discord_webhook_highlights):
-        hl = alert.model_copy(update={"alert_type": "highlight"})
-        await state.discord.send(hl, photo_url=photo_url, ai_text=ai_text)
+    ping = state.settings.discord_ping_user_id if _is_coolest(alert, aircraft) else None
+    await state.discord.send(alert, photo_url=photo_url, ai_text=ai_text, ping_user=ping)
 
 
 async def _global_scan_loop() -> None:
@@ -266,10 +283,11 @@ async def _global_scan_loop() -> None:
                 a.reason = reason
                 interesting.append(a)
 
-            # Rank: emergency > military > rare, then by size.
-            rank = {"emergency": 0, "watchlist": 1, "military": 2, "rare": 3}
-            interesting.sort(key=lambda a: (rank.get(a.marker_category, 9),
-                                            -(a.category or 0)))
+            # Rank: emergency > special > military > rare, then by size.
+            rank = {"emergency": 0, "watchlist": 1, "military": 3, "rare": 4}
+            interesting.sort(key=lambda a: (
+                rank.get(a.marker_category, 9) if not state.alerts.is_special(a) else 2,
+                -(a.category or 0)))
             state.global_interesting = interesting[:200]
             logger.info("Global scan: %d aircraft → %d interesting worldwide",
                         len(aircraft), len(interesting))
@@ -294,6 +312,9 @@ def _why_interesting(a: Aircraft):
         return "emergency", f"Squawk {a.squawk} – {constants.EMERGENCY_SQUAWKS[a.squawk]}"
     if a.icao24 in state.alerts.watchlist:
         return "watchlist", state.alerts.watchlist[a.icao24]
+    special = state.alerts.special_label(a)
+    if special:
+        return ("military" if state.alerts._is_military(a) else "rare"), special
     if state.alerts._is_military(a):
         return "military", f"Military – {a.typecode or a.operator or '?'}"
     rare = state.alerts._rare_label(a)
@@ -314,6 +335,7 @@ async def _ai_loop() -> None:
     a short reason per pick. Top picks go to the highlights channel.
     """
     await asyncio.sleep(12)
+    last_digest = 0.0
     while True:
         try:
             interval = max(30, state.settings.ollama_insights_interval)
@@ -329,18 +351,21 @@ async def _ai_loop() -> None:
             picks = await state.ollama.pick_interesting(source)
             if picks:
                 by_icao = _by_icao(source)
-                ai_insights = []
-                for p in picks:
-                    a = by_icao.get(p["icao24"])
-                    if a:
-                        ai_insights.append(_insight_dict(a, p.get("reason", "")))
+                ai_insights = [_insight_dict(by_icao[p["icao24"]], p.get("reason", ""))
+                               for p in picks if p["icao24"] in by_icao]
                 if ai_insights:
                     insights = ai_insights
 
             state.ai_insights = insights
             state.ai_insights_ts = time.time()
             await _broadcast_ai(insights)
-            await _push_highlights(insights, _by_icao(source))
+
+            # Every ai_digest_minutes: web-enrich the top 3 and post to GUI + Discord.
+            digest_gap = max(60, state.settings.ai_digest_minutes * 60)
+            if time.time() - last_digest >= digest_gap:
+                last_digest = time.time()
+                await _ai_digest(insights[:3])
+
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             raise
@@ -349,37 +374,53 @@ async def _ai_loop() -> None:
             await asyncio.sleep(60)
 
 
+async def _ai_digest(top: list[dict]) -> None:
+    """Enrich the top picks with SearXNG web context + an AI summary, push to the
+    web GUI and post a single digest to Discord. Best-effort throughout."""
+    if not top:
+        return
+    enriched = []
+    for ins in top:
+        item = dict(ins)
+        snippets = await state.search.about_aircraft(ins) if state.search.enabled else []
+        if snippets:
+            subject = " ".join(filter(None, [ins.get("callsign"), ins.get("typecode"),
+                                             ins.get("operator"), ins.get("reason")]))
+            try:
+                summary = await state.ollama.summarize_with_context(subject, snippets)
+            except Exception:  # noqa: BLE001
+                summary = None
+            if summary:
+                item["analysis"] = summary
+            item["sources"] = [s["url"] for s in snippets[:3] if s.get("url")]
+        item.setdefault("analysis", ins.get("reason"))
+        item["public_url"] = state.settings.public_url
+        enriched.append(item)
+
+    # Show the enriched analysis in the web GUI.
+    for ins, item in zip(top, enriched):
+        ins["analysis"] = item.get("analysis")
+        ins["sources"] = item.get("sources", [])
+    state.ai_insights = (enriched + state.ai_insights)[:12]
+    await _broadcast_ai(state.ai_insights)
+
+    if state.discord.enabled:
+        await state.discord.send_digest("✨ Top aircraft right now", enriched)
+
+
 def _insight_dict(a: Aircraft, reason: str) -> dict:
     return {
         "icao24": a.icao24,
         "callsign": (a.callsign or "").strip(),
         "typecode": a.typecode,
         "operator": a.operator or a.owner,
+        "origin_country": a.origin_country,
         "marker_category": a.marker_category,
         "latitude": a.latitude,
         "longitude": a.longitude,
         "distance_km": a.distance_km,
         "reason": reason or a.reason or "",
     }
-
-
-async def _push_highlights(insights: list[dict], by_icao: dict) -> None:
-    if not state.settings.discord_webhook_highlights:
-        return
-    for ins in insights[:3]:
-        a = by_icao.get(ins["icao24"])
-        if not a:
-            continue
-        alert = state.alerts.build_alert(
-            a, "highlight", f"✨ AI pick: {ins['reason'] or 'interesting aircraft'}",
-            constants.COLOR_HOLDING, label=ins["reason"], now=time.time(),
-        )
-        # Light cooldown so the same jet isn't re-posted every minute.
-        if not await state.alerts.passes_cooldown(alert):
-            continue
-        photo = await state.photos.get(a.icao24)
-        await state.discord.send(alert, photo_url=(photo or {}).get("thumbnail"),
-                                 ai_text=ins["reason"])
 
 
 async def _broadcast_ai(insights: list[dict]) -> None:
@@ -439,8 +480,8 @@ async def _handle_region_entry(a: Aircraft, region: dict) -> None:
         a, "region", f"🌍 {region['label']}", constants.COLOR_RARE,
         label=region["name"], now=_t.time(),
     )
-    if not await state.alerts.passes_cooldown(alert):
-        return
+    # The region loop's own entrant/seen-set logic already dedups per appearance,
+    # so we dispatch directly (no extra presence-dedup that would block re-entries).
     await _dispatch_alert(alert, a)
     # Push a live alert to connected clients too.
     await state.ws.broadcast({
@@ -645,6 +686,10 @@ SETTINGS_SCHEMA = [
     ("Discord", "discord_webhook", "text", "Webhook URL"),
     ("Discord", "discord_webhook_highlights", "text", "Highlights webhook URL"),
     ("Discord", "discord_photos", "bool", "Attach aircraft photos"),
+    ("Discord", "discord_only_mega", "bool", "Only ping for mega-cool events"),
+    ("Discord", "discord_ping_user_id", "text", "@mention user id (coolest events)"),
+    ("Ollama AI", "searxng_url", "text", "SearXNG URL (web context for digest)"),
+    ("Ollama AI", "ai_digest_minutes", "number", "AI digest interval (min)"),
     ("Alerts", "alert_emergency", "bool", "Emergency squawks"),
     ("Alerts", "alert_military", "bool", "Military"),
     ("Alerts", "alert_rare", "bool", "Rare types"),

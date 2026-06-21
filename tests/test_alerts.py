@@ -61,7 +61,7 @@ def test_civilian_not_military():
 def test_rare_typecode():
     eng = make_engine()
     ac = Aircraft(icao24="x", typecode="A124")
-    assert eng._rare_label(ac) == "Antonov An-124 Ruslan"
+    assert "An-124" in eng._rare_label(ac)
 
 
 def test_common_widebody_not_rare():
@@ -75,6 +75,33 @@ def test_genuinely_rare_still_flagged():
     eng = make_engine()
     for tc in ("A388", "B748", "CONC", "IL76", "MD11"):
         assert eng._rare_label(Aircraft(icao24="x", typecode=tc)), tc
+
+
+def test_special_typecode_label():
+    eng = make_engine()
+    assert "Superfortress" in (eng.special_label(Aircraft(icao24="x", typecode="B29")) or "")
+    assert eng.is_special(Aircraft(icao24="x", typecode="B29"))
+    assert "Lancaster" in (eng._rare_label(Aircraft(icao24="x", typecode="LANC")) or "")
+
+
+def test_special_callsign_label():
+    eng = make_engine()
+    assert "VIP" in (eng.special_label(Aircraft(icao24="x", callsign="SPAR19")) or "")
+    assert "Nightwatch" in (eng.special_label(Aircraft(icao24="x", callsign="NIGHTWATCH01")) or "")
+
+
+def test_alert_once_per_appearance():
+    import asyncio, time
+    eng = make_engine(alert_reappear_minutes=10)
+    ac = Aircraft(icao24="abcd", typecode="C130", latitude=48, longitude=14, true_track=0)
+    first = asyncio.run(eng.evaluate([ac]))
+    second = asyncio.run(eng.evaluate([ac]))
+    assert any(a.alert_type == "military" for a in first)
+    assert second == []                      # still present → no repeat
+    # Simulate it disappearing for a while, then re-entering → re-arms.
+    eng._present[ac.icao24] = time.time() - 999
+    third = asyncio.run(eng.evaluate([ac]))
+    assert any(a.alert_type == "military" for a in third)
 
 
 def test_watchlist_match():

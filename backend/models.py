@@ -87,6 +87,8 @@ class AlertRecord(BaseModel):
     typecode: Optional[str] = None
     registration: Optional[str] = None
     operator: Optional[str] = None
+    model: Optional[str] = None
+    manufacturer: Optional[str] = None
     squawk: Optional[str] = None
     altitude_m: Optional[float] = None
     speed_ms: Optional[float] = None

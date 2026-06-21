@@ -48,24 +48,57 @@ class AlertEngine:
 
         self.watchlist = {e.icao24: e.label for e in settings.watchlist}
 
+        self.special_typecodes = {k.upper(): v for k, v in constants.SPECIAL_TYPECODES.items()}
+        self.special_callsigns = dict(constants.SPECIAL_CALLSIGNS)
+
         # In-memory rolling position history for holding detection.
         self._tracks: dict[str, deque[_TrackPoint]] = defaultdict(
             lambda: deque(maxlen=120)
         )
-        # In-process cooldown cache to avoid hammering the DB every cycle.
-        self._cooldown_cache: dict[tuple[str, str], float] = {}
+        # Presence tracking for "one alert per appearance" dedup.
+        self._present: dict[str, float] = {}            # icao -> last seen ts
+        self._alerted: dict[tuple[str, str], float] = {}  # (icao, type) -> alerted ts
 
     # --------------------------------------------------------------- main
 
     async def evaluate(self, aircraft_list: list[Aircraft]) -> list[AlertRecord]:
         alerts: list[AlertRecord] = []
         now = time.time()
+        gap = self.settings.alert_reappear_minutes * 60
         for a in aircraft_list:
+            # Re-arm an aircraft that has been gone (not seen) for >= gap, so it
+            # alerts again on a genuine re-entry but only once per appearance.
+            if now - self._present.get(a.icao24, 0) >= gap:
+                for k in [k for k in self._alerted if k[0] == a.icao24]:
+                    del self._alerted[k]
+            self._present[a.icao24] = now
             self._track(a, now)
             for alert in self._classify(a, now):
-                if await self._passes_cooldown(alert, now):
+                if self._passes_dedup(alert, now):
                     alerts.append(alert)
+        self._prune(now)
         return alerts
+
+    def _passes_dedup(self, alert: AlertRecord, now: float) -> bool:
+        """One alert per (aircraft, type) per appearance session."""
+        key = (alert.icao24, alert.alert_type)
+        if key in self._alerted:
+            return False
+        self._alerted[key] = now
+        return True
+
+    async def passes_cooldown(self, alert: AlertRecord, now: float = 0.0) -> bool:
+        """Public wrapper used by the region watcher (same presence dedup)."""
+        return self._passes_dedup(alert, now or time.time())
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - 24 * 3600
+        for icao, ts in list(self._present.items()):
+            if ts < cutoff:
+                self._present.pop(icao, None)
+        for key, ts in list(self._alerted.items()):
+            if ts < cutoff:
+                self._alerted.pop(key, None)
 
     def colorize(self, a: Aircraft) -> str:
         """Set marker_category for display only (no alerts, no cooldown).
@@ -107,22 +140,25 @@ class AlertEngine:
                                    f"⭐ Watchlist: {label}",
                                    constants.COLOR_WATCHLIST, label=label, now=now))
 
-        # 3. Military.
-        if s.alert_military and self._is_military(a):
+        # 3. Military (use the rich special description when we have one).
+        is_mil = self._is_military(a)
+        special = self.special_label(a)
+        if s.alert_military and is_mil:
             if a.marker_category in (constants.CATEGORY_NORMAL,
                                      constants.CATEGORY_HELICOPTER):
                 a.marker_category = constants.CATEGORY_MILITARY
-            out.append(self._build(a, "military",
-                                   "🪖 Military aircraft",
-                                   constants.COLOR_MILITARY, now=now))
+            title = f"🛰️ {special}" if special else "🪖 Military aircraft"
+            out.append(self._build(a, "military", title,
+                                   constants.COLOR_MILITARY, label=special, now=now))
 
-        # 4. Rare / interesting.
+        # 4. Rare / interesting / special (skip if already flagged military).
         rare_label = self._rare_label(a)
-        if s.alert_rare and rare_label:
+        if s.alert_rare and rare_label and not (s.alert_military and is_mil):
             if a.marker_category == constants.CATEGORY_NORMAL:
                 a.marker_category = constants.CATEGORY_RARE
+            icon = "🛰️" if special else "✈️"
             out.append(self._build(a, "rare",
-                                   f"✈️ Rare aircraft: {rare_label}",
+                                   f"{icon} {rare_label}",
                                    constants.COLOR_RARE, label=rare_label, now=now))
 
         # 5. Holding pattern.
@@ -151,8 +187,27 @@ class AlertEngine:
                     return True
         return False
 
+    def special_label(self, a: Aircraft) -> Optional[str]:
+        """Rich description if this is a curated 'special' aircraft (warbird,
+        outsize cargo, spyplane, command post, VIP callsign)."""
+        tc = (a.typecode or "").upper()
+        if tc and tc in self.special_typecodes:
+            return self.special_typecodes[tc]
+        cs = (a.callsign or "").upper().strip()
+        if cs:
+            for prefix, desc in self.special_callsigns.items():
+                if cs.startswith(prefix):
+                    return desc
+        return None
+
+    def is_special(self, a: Aircraft) -> bool:
+        return self.special_label(a) is not None
+
     def _rare_label(self, a: Aircraft) -> Optional[str]:
         tc = (a.typecode or "").upper()
+        sp = self.special_label(a)
+        if sp:
+            return sp
         if tc and tc in self.rare_typecodes:
             return self.rare_typecodes[tc]
         if self.settings.alert_ground_vehicles and \
@@ -204,14 +259,10 @@ class AlertEngine:
 
     # --------------------------------------------------------------- helpers
 
-    # Public wrappers used by the region watcher in main.py.
+    # Public wrapper used by the region watcher in main.py.
     def build_alert(self, a: Aircraft, alert_type: str, title: str, color: int,
                     label: Optional[str] = None, now: float = 0.0) -> AlertRecord:
         return self._build(a, alert_type, title, color, label=label, now=now)
-
-    async def passes_cooldown(self, alert: AlertRecord, now: float = 0.0) -> bool:
-        import time
-        return await self._passes_cooldown(alert, now or time.time())
 
     def _build(self, a: Aircraft, alert_type: str, title: str, color: int,
                label: Optional[str] = None, now: float = 0.0) -> AlertRecord:
@@ -224,6 +275,8 @@ class AlertEngine:
             typecode=a.typecode,
             registration=a.registration,
             operator=a.operator or a.owner,
+            model=a.model,
+            manufacturer=a.manufacturer,
             squawk=a.squawk,
             altitude_m=a.baro_altitude or a.geo_altitude,
             speed_ms=a.velocity,
@@ -233,19 +286,3 @@ class AlertEngine:
             color=color,
             timestamp=now or time.time(),
         )
-
-    async def _passes_cooldown(self, alert: AlertRecord, now: float) -> bool:
-        cooldown_s = self.settings.alert_cooldown_minutes * 60
-        key = (alert.icao24, alert.alert_type)
-
-        cached = self._cooldown_cache.get(key)
-        if cached is not None and now - cached < cooldown_s:
-            return False
-
-        last = await self.db.last_alert_time(alert.icao24, alert.alert_type)
-        if last is not None and now - last < cooldown_s:
-            self._cooldown_cache[key] = last
-            return False
-
-        self._cooldown_cache[key] = now
-        return True

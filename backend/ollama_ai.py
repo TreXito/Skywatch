@@ -170,6 +170,21 @@ class OllamaService:
             return []
         return _parse_json_array(text)
 
+    async def summarize_with_context(self, subject: str, snippets: list[dict]) -> Optional[str]:
+        """Summarize what's notable about an aircraft using web-search snippets."""
+        if not self.enabled or not await self.available():
+            return None
+        context = "\n".join(
+            f"- {s.get('title','')}: {s.get('content','')}" for s in snippets[:10]
+        )
+        prompt = (
+            f"Aircraft: {subject}\n\nWeb search results:\n{context}\n\n"
+            "In 2-3 sentences, explain what is notable or interesting about this "
+            "specific aircraft or type, using the results above. Be factual and "
+            "concrete; don't speculate."
+        )
+        return await self._generate(prompt)
+
     async def digest(self, aircraft_list) -> Optional[str]:
         if not self.enabled or self.settings.ollama_digest_minutes <= 0:
             return None

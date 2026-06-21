@@ -92,6 +92,59 @@ RARE_TYPECODES = {
     "A40": "Beriev A-40/Be-200",
 }
 
+# --- Special "stop everything" aircraft -------------------------------------
+# Curated icons of aviation – warbirds, outsize cargo, spyplanes, command posts.
+# Detected by typecode; the description is shown as the alert reason. These rank
+# above generic rare/military finds.
+SPECIAL_TYPECODES = {
+    # Outsize / special cargo
+    "A37X": "Airbus BelugaXL — 1 of only 6, flies between Airbus plants",
+    "A337": "Airbus BelugaXL — outsize cargo whale",
+    "A3ST": "Airbus Beluga (original) — being retired",
+    "B74R": "Boeing 747 Dreamlifter — 1 of only 4 outsize freighters",
+    "BLCF": "Boeing 747 Dreamlifter — outsize freighter",
+    "A124": "Antonov An-124 Ruslan — one of the largest aircraft on Earth",
+    "A225": "Antonov An-225 Mriya — the largest aircraft ever built",
+    # WWII / warbirds
+    "LANC": "Avro Lancaster — WWII heavy bomber, ~2 airworthy worldwide",
+    "SPIT": "Supermarine Spitfire — Battle of Britain fighter (1940)",
+    "P51": "P-51 Mustang — WWII long-range escort fighter",
+    "B17": "B-17 Flying Fortress — WWII bomber, ~1 airworthy left",
+    "B29": "B-29 Superfortress — 'FIFI', the only airworthy one",
+    "DC3": "Douglas DC-3 — the airliner that started it all (1940s)",
+    "C47": "Douglas C-47 Skytrain — WWII/D-Day transport (DC-3 military)",
+    # Jet trainers with history
+    "L39": "Aero L-39 Albatros — the Eastern Bloc's standard jet trainer",
+    "TS11": "PZL TS-11 Iskra — Poland's home-grown jet trainer",
+    "MB33": "Aermacchi MB-339 — jet of the Frecce Tricolori display team",
+    "M339": "Aermacchi MB-339 — Frecce Tricolori display jet",
+    # Reconnaissance / spy
+    "U2": "Lockheed U-2 — Cold War spyplane, flies at ~21 km",
+    "RC35": "Boeing RC-135 Rivet Joint — the West's top SIGINT platform",
+    "RC135": "Boeing RC-135 Rivet Joint — signals-intelligence recon",
+    "RQ4": "RQ-4 Global Hawk — high-altitude recon drone over E. Europe",
+    "GHWK": "RQ-4 Global Hawk — high-altitude recon drone",
+    # VIP / command
+    "E4": "Boeing E-4B Nightwatch — airborne nuclear command post (Doomsday)",
+    "E6": "Boeing E-6B Mercury — nuclear command relay (TACAMO)",
+    "E6B": "Boeing E-6B Mercury — nuclear command relay (TACAMO)",
+}
+
+# Callsign prefixes that mark a notable flight, with context shown as the reason.
+SPECIAL_CALLSIGNS = {
+    "NIGHTWATCH": "E-4B 'Nightwatch' — airborne nuclear command post",
+    "IRON99": "E-4B 'Nightwatch' — airborne nuclear command post",
+    "ORDER": "E-6B Mercury — nuclear command relay",
+    "SPAR": "US Air Force VIP / government flight",
+    "SAM": "US Air Force Special Air Mission (VIP)",
+    "NATO": "NATO flight",
+    "MAGMA": "NATO AWACS / support",
+    "FORTE": "RQ-4 Global Hawk — recon drone",
+    "HOMER": "RC-135 — signals-intelligence recon",
+    "JAKE": "Reconnaissance flight",
+    "IRAN": "Iranian state flight",
+}
+
 # --- OpenSky category codes -------------------------------------------------
 # index → label, per the OpenSky state vector `category` field.
 OPENSKY_CATEGORIES = {

@@ -299,10 +299,12 @@
       if (!a || a.on_ground || !a.velocity || a.true_track == null || e.anchorLat == null) continue;
       const age = (now - e.anchorTime) / 1000;
       if (age > 120) continue;
-      const [tlat, tlon] = destPoint(e.anchorLat, e.anchorLon, a.velocity * age, a.true_track);
-      // Ease toward the predicted target → smooth, absorbs re-anchor corrections.
-      e.dispLat += (tlat - e.dispLat) * 0.18;
-      e.dispLon += (tlon - e.dispLon) * 0.18;
+      // Gentle, capped forward lead so markers glide calmly instead of racing far
+      // ahead between (now infrequent) server updates.
+      const lead = Math.min(age, 15);
+      const [tlat, tlon] = destPoint(e.anchorLat, e.anchorLon, a.velocity * lead, a.true_track);
+      e.dispLat += (tlat - e.dispLat) * 0.1;
+      e.dispLon += (tlon - e.dispLon) * 0.1;
       e.marker.setLatLng([e.dispLat, e.dispLon]);
     }
   }

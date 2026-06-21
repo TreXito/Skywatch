@@ -45,6 +45,12 @@ class Settings(BaseModel):
     # "Highlights" channel for the coolest events (emergencies, holding, rare, AI
     # picks) – always with photo + a deep link to this instance focused on the jet.
     discord_webhook_highlights: str = ""
+    # Discord user id to @mention for the very coolest events (emergency + special).
+    discord_ping_user_id: str = ""
+    # Only send Discord alerts for genuinely cool events (emergency / special /
+    # watchlist / region). Generic military/rare stay on the map + AI panel only.
+    discord_only_mega: bool = True
+    ai_digest_minutes: int = 15          # post the current top-3 to Discord this often
 
     # --- watchlist ---
     watchlist: List[WatchlistEntry] = Field(default_factory=list)
@@ -111,6 +117,11 @@ class Settings(BaseModel):
     ollama_insights: bool = True         # every minute: AI picks the coolest jets
     ollama_insights_interval: int = 60   # seconds between AI insight passes
 
+    # --- web search enrichment (SearXNG) ---
+    # The AI digest can pull web context about the top aircraft from a SearXNG
+    # instance (JSON API), e.g. "https://search.trexito.com".
+    searxng_url: str = ""
+
     # --- flight trails / history (FlightRadar24-like) ---
     flight_history_enabled: bool = True
     trail_minutes: int = 180             # how far back the selected trail goes
@@ -123,6 +134,9 @@ class Settings(BaseModel):
     alert_holding: bool = True
     alert_ground_vehicles: bool = False
     alert_cooldown_minutes: int = 30
+    # An aircraft alerts only ONCE per appearance; it re-arms only after it has
+    # been gone (not seen) for at least this long, then re-enters.
+    alert_reappear_minutes: int = 10
 
     # --- holding detection ---
     holding_min_loops: int = 2

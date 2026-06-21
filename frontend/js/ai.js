@@ -45,14 +45,19 @@
     }
     el.innerHTML = head + insights.map((i) => {
       const color = SW.CATEGORY_COLORS[i.marker_category] || SW.CATEGORY_COLORS.normal;
-      const dist = i.distance_km != null ? `${Math.round(i.distance_km).toLocaleString()} km away` : "";
       const lat = i.latitude, lon = i.longitude;
+      // Show WHERE it is: country + coordinates (click flies you there).
+      const loc = [i.origin_country,
+        (lat != null ? `${lat.toFixed(2)}, ${lon.toFixed(2)}` : "")]
+        .filter(Boolean).join(" · ");
+      const srcs = (i.sources || []).slice(0, 3).map((u, n) =>
+        `<a href="${u}" target="_blank" onclick="event.stopPropagation()">src${n + 1}</a>`).join(" · ");
       return `<div class="ai-item" onclick="SkyWatch.flyToAircraft('${i.icao24}',${lat},${lon})">
         <div class="ai-head"><span class="cat-swatch" style="background:${color}"></span>
           <b>${(i.callsign || i.icao24).trim()}</b>
           <span class="muted">${i.typecode || ""}</span></div>
-        <div class="ai-reason">${i.reason || i.marker_category}</div>
-        <div class="muted" style="font-size:.72rem">${[i.operator, dist].filter(Boolean).join(" · ")}</div>
+        <div class="ai-reason">${i.analysis || i.reason || i.marker_category}</div>
+        <div class="muted" style="font-size:.72rem">📍 ${loc}${i.operator ? " · " + i.operator : ""}${srcs ? " · " + srcs : ""}</div>
       </div>`;
     }).join("");
   };
