@@ -21,18 +21,26 @@
     try {
       const res = await fetch("/api/ai/insights", SW.fetchOpts());
       const d = await res.json();
-      SW.renderAI(d.insights || [], d.enabled, d.ollama);
+      SW.renderAI(d);
     } catch (e) { /* ignore */ }
   };
 
-  SW.renderAI = function (insights, enabled, ollama) {
+  SW.renderAI = function (d) {
     const el = document.getElementById("ai-body");
     if (!el) return;
+    const insights = d.insights || [];
     let head = "";
-    if (!ollama)
-      head = '<p class="muted">Heuristic ranking. Set a (remote) Ollama URL in Settings 🛠️ for AI reasons.</p>';
+    if (d.ollama_error)
+      head = `<p class="muted">⚠ Ollama: ${d.ollama_error}. Heuristic ranking is used. Fix the URL/model in Settings 🛠️ → Test.</p>`;
+    else if (!d.ollama)
+      head = '<p class="muted">Heuristic ranking. Enable a (remote) Ollama in Settings 🛠️ for AI reasons.</p>';
+    if (d.credit_budget && d.credits >= d.credit_budget)
+      head += '<p class="muted">⚠ Daily OpenSky credit budget reached — scans paused until reset.</p>';
     if (!insights.length) {
-      el.innerHTML = head + '<p class="muted">No rare/military/emergency aircraft worldwide right now. The global scan runs every few minutes.</p>';
+      const why = (d.global_count === 0)
+        ? "Global scan found nothing yet (or OpenSky is rate-limited). It runs every few minutes."
+        : "No rare/military/emergency aircraft worldwide right now.";
+      el.innerHTML = head + `<p class="muted">${why}</p>`;
       return;
     }
     el.innerHTML = head + insights.map((i) => {

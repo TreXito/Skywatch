@@ -26,8 +26,13 @@
       document.getElementById("status-update").textContent =
         `updated ${dt.toLocaleTimeString()}`;
     }
-    document.getElementById("status-rate").textContent =
-      status.rate_limited ? "⚠️ rate limited" : "";
+    let rate = status.rate_limited ? "⚠️ rate limited" : "";
+    if (status.budget_reached) rate = "⚠️ credit budget reached";
+    if (status.credit_budget) {
+      const c = `${(status.credits_used || 0)}/${status.credit_budget} cr`;
+      rate = rate ? `${rate} · ${c}` : c;
+    }
+    document.getElementById("status-rate").textContent = rate;
   };
 
   async function refreshMeta() {

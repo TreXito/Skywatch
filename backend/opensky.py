@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -34,6 +35,9 @@ class ApiStatus:
     auth_mode: str = "anonymous"   # anonymous | basic | oauth2
     rate_limited: bool = False
     consecutive_errors: int = 0
+    credits_used: int = 0          # estimated OpenSky credits used today
+    credit_budget: int = 0
+    budget_reached: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -43,6 +47,9 @@ class ApiStatus:
             "last_count": self.last_count,
             "auth_mode": self.auth_mode,
             "rate_limited": self.rate_limited,
+            "credits_used": self.credits_used,
+            "credit_budget": self.credit_budget,
+            "budget_reached": self.budget_reached,
         }
 
 
@@ -57,6 +64,8 @@ class OpenSkyClient:
         self._last_viewport_call: float = 0.0
         # bbox key -> (timestamp, aircraft)
         self._viewport_cache: dict = {}
+        self._credit_day = None
+        self._credits_used = 0
 
         if settings.opensky_client_id and settings.opensky_client_secret:
             self.status.auth_mode = "oauth2"
@@ -95,6 +104,36 @@ class OpenSkyClient:
             self.status.last_error = f"OAuth2 token error: {exc}"
             return None
 
+    # ----------------------------------------------------------- credits
+
+    @staticmethod
+    def _estimate_credits(bbox: Optional[tuple]) -> int:
+        """OpenSky bills by query area: 1/2/3/4 credits, 4 for the whole world."""
+        if bbox is None:
+            return 4
+        area = abs(bbox[1] - bbox[0]) * abs(bbox[3] - bbox[2])
+        if area <= 25:
+            return 1
+        if area <= 100:
+            return 2
+        if area <= 400:
+            return 3
+        return 4
+
+    def _account(self, bbox: Optional[tuple]) -> None:
+        today = datetime.now(timezone.utc).date()
+        if self._credit_day != today:
+            self._credit_day = today
+            self._credits_used = 0
+            self.status.budget_reached = False
+        self._credits_used += self._estimate_credits(bbox)
+        self.status.credits_used = self._credits_used
+        self.status.credit_budget = self.settings.daily_credit_budget
+
+    @property
+    def credits_remaining(self) -> int:
+        return max(0, self.settings.daily_credit_budget - self._credits_used)
+
     # ----------------------------------------------------------- polling
 
     class RateLimited(Exception):
@@ -128,12 +167,28 @@ class OpenSkyClient:
         resp.raise_for_status()
         states = (resp.json() or {}).get("states") or []
         self._last_call_ts = time.time()
+        self._account(bbox)
         return [Aircraft.from_state_vector(sv) for sv in states if sv and sv[0]]
+
+    def _over_budget(self, background: bool) -> bool:
+        """True if a request should be skipped to stay within the daily budget.
+
+        Interactive (browser) fetches stop earlier so a chunk is always reserved
+        for the essential background scans; background scans use the full budget.
+        The whole point: max out the budget without ever exceeding it.
+        """
+        budget = self.settings.daily_credit_budget
+        threshold = budget if background else int(budget * 0.85)
+        return self._credits_used >= threshold
 
     async def fetch_states(self) -> Optional[list[Aircraft]]:
         """Home-radius poll used for alerts/history. Updates status + schedule."""
         s = self.settings
         bbox = bounding_box(s.latitude, s.longitude, s.radius_km)
+        if self._over_budget(background=True):
+            self.status.budget_reached = True
+            self._schedule_next()
+            return None
         try:
             aircraft = await self._request(bbox)
             self.status.rate_limited = False
@@ -157,11 +212,16 @@ class OpenSkyClient:
             self._schedule_next(backoff=True)
             return None
 
-    async def fetch_viewport(self, bbox: Optional[tuple]) -> Optional[list[Aircraft]]:
+    async def fetch_viewport(self, bbox: Optional[tuple],
+                             background: bool = False) -> Optional[list[Aircraft]]:
         """Fetch aircraft for an arbitrary bbox (map viewport) or None=global.
 
         Cached per rounded bbox for one poll interval, with a global minimum gap
         between real calls so map panning can't hammer OpenSky.
+
+        `background=True` marks essential scans (home/region/global) that always
+        run. Interactive (browser) calls are skipped once the daily credit budget
+        is reached, so the app keeps running a full day without a hard rate-limit.
         """
         key = "global" if bbox is None else tuple(round(v, 1) for v in bbox)
         now = time.time()
@@ -169,6 +229,12 @@ class OpenSkyClient:
         ttl = self.settings.effective_poll_interval
         if cached and now - cached[0] < ttl:
             return cached[1]
+
+        # Credit budget guard: background scans use the full budget, interactive
+        # map fetches reserve a margin so the scans always have credits left.
+        if self._over_budget(background):
+            self.status.budget_reached = True
+            return cached[1] if cached else None
 
         # Global politeness gap between any two viewport calls.
         if now - self._last_viewport_call < max(1.5, ttl / 2) and cached:

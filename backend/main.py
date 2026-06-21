@@ -246,7 +246,7 @@ async def _global_scan_loop() -> None:
     while True:
         try:
             interval = max(60, state.settings.global_scan_interval)
-            aircraft = await state.opensky.fetch_viewport(None)  # None = global
+            aircraft = await state.opensky.fetch_viewport(None, background=True)
             if not aircraft:
                 await asyncio.sleep(interval)
                 continue
@@ -402,7 +402,7 @@ async def _region_loop() -> None:
         try:
             for r in regions:
                 bbox = bounding_box(r["lat"], r["lon"], r["radius_km"])
-                aircraft = await state.opensky.fetch_viewport(bbox)
+                aircraft = await state.opensky.fetch_viewport(bbox, background=True)
                 if aircraft is None:
                     continue
                 current: set[str] = set()
@@ -597,7 +597,11 @@ async def ai_insights():
     s = state.settings
     return {"insights": state.ai_insights, "updated": state.ai_insights_ts,
             "enabled": s.global_scan_enabled or (s.ollama_enabled and s.ollama_insights),
-            "ollama": s.ollama_enabled and s.ollama_insights}
+            "ollama": s.ollama_enabled and s.ollama_insights,
+            "ollama_error": state.ollama.last_error,
+            "global_count": len(state.global_interesting),
+            "credits": state.opensky.status.as_dict().get("credits_used"),
+            "credit_budget": state.settings.daily_credit_budget}
 
 
 @app.get("/api/interesting")
@@ -613,6 +617,11 @@ async def interesting():
 @app.get("/api/ollama/models")
 async def ollama_models(url: str = None):
     return {"models": await state.ollama.list_models(url)}
+
+
+@app.get("/api/ollama/test")
+async def ollama_test(url: str = None, model: str = None):
+    return await state.ollama.test(url, model)
 
 
 # Fields the web settings UI can edit. (group, key, type, label)
@@ -640,6 +649,8 @@ SETTINGS_SCHEMA = [
     ("Worldwide", "global_scan_enabled", "bool", "Scan whole world for rare jets"),
     ("Worldwide", "global_scan_interval", "number", "Global scan interval (s)"),
     ("Worldwide", "global_scan_alerts", "bool", "Alert on global rare finds"),
+    ("Worldwide", "daily_credit_budget", "number", "OpenSky daily credit budget"),
+    ("Access", "api_token", "password", "Web UI password (blank = no login)"),
     ("Layers", "weather_enabled", "bool", "Weather radar"),
     ("Layers", "airports_enabled", "bool", "Airports"),
     ("Layers", "zones_enabled", "bool", "Conflict zones"),
@@ -652,7 +663,7 @@ SETTINGS_SCHEMA = [
     ("Ollama AI", "ollama_insights_interval", "number", "Analysis interval (s)"),
 ]
 _RESTART_KEYS = {"opensky_client_id", "opensky_client_secret", "watch_regions_text",
-                 "region_alerts_enabled", "tracking_mode"}
+                 "region_alerts_enabled", "tracking_mode", "api_token"}
 
 
 @app.get("/api/settings")

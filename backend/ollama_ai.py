@@ -21,8 +21,11 @@ class OllamaService:
     def __init__(self, settings):
         self.settings = settings
         # Generous timeout – local models can be slow on first token.
-        self._client = httpx.AsyncClient(timeout=45.0)
+        self._client = httpx.AsyncClient(timeout=60.0)
         self._available: Optional[bool] = None
+        self._avail_checked_at: float = 0.0
+        self._avail_url: str = ""
+        self.last_error: Optional[str] = None
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -32,20 +35,28 @@ class OllamaService:
         return self.settings.ollama_enabled
 
     async def available(self) -> bool:
-        """Cheap reachability check (cached)."""
+        """Reachability check, re-evaluated periodically (and immediately when the
+        configured URL changes), so enabling/fixing Ollama in the UI takes effect
+        without a restart."""
         if not self.enabled:
             return False
-        if self._available is not None:
+        import time as _t
+        url = self.settings.ollama_url.rstrip("/")
+        # Re-check every 30s, or right away if the URL was changed.
+        if (self._available is not None and url == self._avail_url
+                and _t.time() - self._avail_checked_at < 30):
             return self._available
+        self._avail_url = url
+        self._avail_checked_at = _t.time()
         try:
-            resp = await self._client.get(
-                f"{self.settings.ollama_url.rstrip('/')}/api/tags", timeout=5.0
-            )
+            resp = await self._client.get(f"{url}/api/tags", timeout=6.0)
             self._available = resp.status_code == 200
-        except Exception:  # noqa: BLE001
+            self.last_error = None if self._available else f"HTTP {resp.status_code}"
+        except Exception as exc:  # noqa: BLE001
             self._available = False
+            self.last_error = str(exc)
         if not self._available:
-            logger.warning("Ollama not reachable at %s", self.settings.ollama_url)
+            logger.warning("Ollama not reachable at %s: %s", url, self.last_error)
         return self._available
 
     async def _generate(self, prompt: str, system: str = "") -> Optional[str]:
@@ -98,6 +109,24 @@ class OllamaService:
             "as fact.\n\n" + "\n".join(filter(None, lines))
         )
         return await self._generate(prompt)
+
+    async def test(self, url: Optional[str] = None, model: Optional[str] = None) -> dict:
+        """Do a tiny real generation to confirm the (remote) server + model work."""
+        base = (url or self.settings.ollama_url).rstrip("/")
+        mdl = model or self.settings.ollama_model
+        try:
+            resp = await self._client.post(
+                f"{base}/api/generate",
+                json={"model": mdl, "prompt": "Reply with the single word OK.",
+                      "stream": False, "options": {"num_predict": 5}},
+                timeout=30.0,
+            )
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            return {"ok": True, "model": mdl,
+                    "response": (resp.json().get("response") or "").strip()[:120]}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
 
     async def list_models(self, url: Optional[str] = None) -> list[str]:
         """List models on an Ollama server (used by the settings UI 'Load models')."""

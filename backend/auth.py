@@ -114,7 +114,7 @@ _TOKEN_LOGIN_PAGE = """<!doctype html>
   document.cookie='skywatch_token='+encodeURIComponent(t.value)+';path=/';
   location.href='/';">
   <h1>🛫 Sky Watch</h1>
-  <p>Enter your access token:</p>
-  <input id="t" type="password" placeholder="API token" autofocus>
+  <p>Enter the password:</p>
+  <input id="t" type="password" placeholder="Password" autofocus>
   <button type="submit">Enter</button>
 </form></body></html>"""

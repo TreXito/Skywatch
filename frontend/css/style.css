@@ -241,7 +241,7 @@ body.has-selection .ac-marker.focused { opacity: 1; }
   background: var(--bg); color: var(--text); box-sizing: border-box; }
 .settings-actions { display: flex; align-items: center; gap: .6rem; margin-top: .6rem;
   position: sticky; bottom: 0; background: var(--panel); padding-top: .4rem; }
-#ollama-load { margin-top: .3rem; }
+.ollama-actions { display: flex; align-items: center; gap: .4rem; margin-top: .3rem; flex-wrap: wrap; }
 
 .hidden { display: none !important; }
 

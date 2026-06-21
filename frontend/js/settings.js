@@ -1,6 +1,7 @@
 /* settings.js – in-browser settings editor. Reads /api/settings, renders a form
    grouped by section, and POSTs changes (persisted to an overrides file so your
-   commented config.yaml is never touched). Includes remote Ollama URL + model load. */
+   commented config.yaml is never touched). Ollama: enter URL, pick a model from a
+   dropdown loaded from the server, and test it. */
 (function () {
   const SW = (window.SkyWatch = window.SkyWatch || {});
   let schema = [], values = {};
@@ -37,6 +38,14 @@
       return `<label class="switch-row"><input type="checkbox" id="${id}" data-key="${f.key}" ${v ? "checked" : ""}/>
         <span>${f.label}</span></label>`;
     }
+    // Ollama model is a dropdown populated from the server.
+    if (f.key === "ollama_model") {
+      const cur = v == null ? "" : v;
+      return `<div class="set-field"><label for="${id}">${f.label}</label>
+        <select id="${id}" data-key="${f.key}">
+          ${cur ? `<option value="${cur}" selected>${cur}</option>` : `<option value="">(load models)</option>`}
+        </select></div>`;
+    }
     let input;
     if (f.type === "textarea") {
       input = `<textarea id="${id}" data-key="${f.key}" rows="3">${v == null ? "" : v}</textarea>`;
@@ -50,10 +59,11 @@
     }
     let extra = "";
     if (f.key === "ollama_url") {
-      extra = `<button type="button" class="mini-btn" id="ollama-load">Load models</button>
-               <datalist id="ollama-models"></datalist>`;
+      extra = `<div class="ollama-actions">
+        <button type="button" class="mini-btn" id="ollama-load">↻ Load models</button>
+        <button type="button" class="mini-btn" id="ollama-test">⚡ Test</button>
+        <span id="ollama-status" class="muted"></span></div>`;
     }
-    if (f.key === "ollama_model") input = input.replace("/>", ` list="ollama-models"/>`);
     return `<div class="set-field"><label for="${id}">${f.label}</label>${input}${extra}</div>`;
   }
 
@@ -61,27 +71,49 @@
     const groups = {};
     schema.forEach((f) => { (groups[f.group] = groups[f.group] || []).push(f); });
     const html = Object.entries(groups).map(([g, fields]) =>
-      `<details class="set-group" open><summary>${g}</summary>${fields.map(field).join("")}</details>`
+      `<details class="set-group" ${g === "Ollama AI" ? "open" : ""}><summary>${g}</summary>${fields.map(field).join("")}</details>`
     ).join("");
     document.getElementById("settings-body").innerHTML = html;
 
-    const ol = document.getElementById("ollama-load");
-    if (ol) ol.addEventListener("click", loadOllamaModels);
+    document.getElementById("ollama-load")?.addEventListener("click", () => SW.loadOllamaModels(true));
+    document.getElementById("ollama-test")?.addEventListener("click", SW.testOllama);
+    // Auto-load the model list if a URL is configured.
+    if (document.getElementById("set-ollama_url")?.value.trim()) SW.loadOllamaModels(false);
   }
 
-  async function loadOllamaModels() {
-    const url = document.getElementById("set-ollama_url").value.trim();
-    const status = document.getElementById("settings-status");
-    status.textContent = "Loading models…";
+  SW.loadOllamaModels = async function (announce) {
+    const url = document.getElementById("set-ollama_url")?.value.trim();
+    const status = document.getElementById("ollama-status");
+    const sel = document.getElementById("set-ollama_model");
+    if (!sel) return;
+    if (announce && status) status.textContent = "Loading…";
     try {
-      const res = await fetch(`/api/ollama/models?url=${encodeURIComponent(url)}`, SW.fetchOpts());
+      const res = await fetch(`/api/ollama/models?url=${encodeURIComponent(url || "")}`, SW.fetchOpts());
       const d = await res.json();
-      const dl = document.getElementById("ollama-models");
-      dl.innerHTML = (d.models || []).map((m) => `<option value="${m}">`).join("");
-      status.textContent = (d.models || []).length
-        ? `${d.models.length} models found ✓` : "No models / unreachable";
-    } catch (e) { status.textContent = "Failed to reach Ollama"; }
-  }
+      const models = d.models || [];
+      const current = sel.value;
+      if (models.length) {
+        sel.innerHTML = models.map((m) =>
+          `<option value="${m}" ${m === current ? "selected" : ""}>${m}</option>`).join("");
+        if (status) status.textContent = `${models.length} models ✓`;
+      } else if (status) {
+        status.textContent = "No models / unreachable";
+      }
+    } catch (e) { if (status) status.textContent = "Failed to reach Ollama"; }
+  };
+
+  SW.testOllama = async function () {
+    const url = document.getElementById("set-ollama_url")?.value.trim();
+    const model = document.getElementById("set-ollama_model")?.value;
+    const status = document.getElementById("ollama-status");
+    if (status) status.textContent = "Testing…";
+    try {
+      const q = `?url=${encodeURIComponent(url || "")}&model=${encodeURIComponent(model || "")}`;
+      const res = await fetch(`/api/ollama/test${q}`, SW.fetchOpts());
+      const d = await res.json();
+      if (status) status.textContent = d.ok ? `✓ works (${d.model})` : `✗ ${d.error || "failed"}`;
+    } catch (e) { if (status) status.textContent = "✗ test failed"; }
+  };
 
   SW.saveSettings = async function () {
     const status = document.getElementById("settings-status");
@@ -103,7 +135,6 @@
       const d = await res.json();
       status.textContent = d.restart_recommended
         ? "Saved ✓ — some changes need a restart" : "Saved ✓";
-      // Re-apply map style live if it changed.
       if (payload.map_style && SW.setBasemap) {
         const map = { "dark-en": "Dark · EN labels", "dark": "Dark (Carto)",
           "german": "Deutsch (OSM.de)", "light": "Light · EN labels", "satellite": "Satellite" };

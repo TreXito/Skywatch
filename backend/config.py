@@ -96,6 +96,12 @@ class Settings(BaseModel):
     global_scan_interval: int = 300        # seconds between worldwide scans
     global_scan_alerts: bool = True        # send Discord alerts for global finds
 
+    # --- OpenSky daily credit budget (self-throttle to avoid rate limits) ---
+    # A free OpenSky account has ~4000 credits/day (cost scales with query area).
+    # The app maxes this out without exceeding it: background scans may use the
+    # whole budget, interactive map fetches reserve ~15% so scans never starve.
+    daily_credit_budget: int = 4000
+
     # --- local Ollama AI analysis ---
     ollama_enabled: bool = False
     ollama_url: str = "http://localhost:11434"

@@ -52,6 +52,9 @@ discord_webhook: ""
 # global_scan_enabled: true    # one worldwide scan for rare/military/emergency jets
 # global_scan_interval: 300    # seconds between worldwide scans
 # region_poll_interval: 120    # seconds between region-watch polls
+# daily_credit_budget: 4000    # free OpenSky account ~4000 credits/day; the app
+#                              # maxes this out without exceeding it (scans get
+#                              # priority, interactive fetches reserve ~15%)
 #
 # Map labels language / style: dark-en (English labels) | dark | german | light | satellite
 # map_style: "dark-en"
