@@ -91,7 +91,7 @@
       ["Altitude", fmtAlt(ac.baro_altitude ?? ac.geo_altitude)],
       ["Speed", fmtSpd(ac.velocity)],
       ["Heading", ac.true_track == null ? "—" : `${Math.round(ac.true_track)}°`],
-      ["Squawk", SW.squawkDisplay(ac.squawk)],
+      ["Squawk", SW.squawkDisplay(ac)],
       ["Distance", ac.distance_km == null ? "—" : `${ac.distance_km.toFixed(1)} km`],
     ];
 
@@ -140,8 +140,17 @@
     if (sq >= "0301" && sq <= "0377") return "Domestic / FIR";
     return null;
   };
-  SW.squawkDisplay = function (sq) {
+  SW.squawkDisplay = function (ac) {
+    const sq = typeof ac === "string" ? ac : (ac && ac.squawk);
     if (!sq) return "—";
+    // Only show the scary emergency meaning once the server has CONFIRMED it
+    // (marker category = emergency). A lone transient 7500/7600 from one receiver
+    // is shown as the raw code to avoid false "Hijack".
+    if (SW.isEmergencySquawk(sq)) {
+      if (typeof ac === "object" && ac && ac.marker_category === "emergency")
+        return `${sq} – ${SW.squawkMeaning(sq)} ⚠️`;
+      return `${sq} (unconfirmed)`;
+    }
     const m = SW.squawkMeaning(sq);
     return m ? `${sq} – ${m}` : sq;
   };

@@ -111,8 +111,6 @@ SPECIAL_TYPECODES = {
     "P51": "P-51 Mustang — WWII long-range escort fighter",
     "B17": "B-17 Flying Fortress — WWII bomber, ~1 airworthy left",
     "B29": "B-29 Superfortress — 'FIFI', the only airworthy one",
-    "DC3": "Douglas DC-3 — the airliner that started it all (1940s)",
-    "C47": "Douglas C-47 Skytrain — WWII/D-Day transport (DC-3 military)",
     # Jet trainers with history
     "L39": "Aero L-39 Albatros — the Eastern Bloc's standard jet trainer",
     "TS11": "PZL TS-11 Iskra — Poland's home-grown jet trainer",

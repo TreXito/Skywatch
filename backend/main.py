@@ -309,7 +309,7 @@ async def _global_scan_loop() -> None:
 
 def _why_interesting(a: Aircraft):
     """Return (marker_category, reason) if the aircraft is worldwide-interesting."""
-    if a.squawk in constants.EMERGENCY_SQUAWKS:
+    if a.squawk in constants.EMERGENCY_SQUAWKS and state.alerts.confirm_emergency(a):
         return "emergency", f"Squawk {a.squawk} – {constants.EMERGENCY_SQUAWKS[a.squawk]}"
     if a.icao24 in state.alerts.watchlist:
         return "watchlist", state.alerts.watchlist[a.icao24]

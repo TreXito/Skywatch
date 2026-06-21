@@ -14,18 +14,29 @@ def make_engine(**overrides):
 
 def test_emergency_squawk_detection():
     eng = make_engine()
+    now = time.time()
     ac = Aircraft(icao24="abc", squawk="7700", latitude=48.3, longitude=14.2)
-    alerts = eng._classify(ac, time.time())
-    types = {a.alert_type for a in alerts}
-    assert "emergency" in types
+    # First sighting is not yet confirmed (debounce against noisy ADS-B data).
+    assert not any(a.alert_type == "emergency" for a in eng._classify(ac, now))
+    eng._emerg_first["abc"] = now - 30   # persisted long enough → confirmed
+    alerts = eng._classify(ac, now)
+    assert any(a.alert_type == "emergency" for a in alerts)
     assert ac.marker_category == constants.CATEGORY_EMERGENCY
 
 
-def test_all_emergency_codes():
+def test_all_emergency_codes_when_confirmed():
     eng = make_engine()
     for code in ("7500", "7600", "7700"):
-        ac = Aircraft(icao24="x", squawk=code)
+        ac = Aircraft(icao24="x" + code, squawk=code)
+        eng._emerg_first[ac.icao24] = -1000    # already confirmed
         assert any(a.alert_type == "emergency" for a in eng._classify(ac, 0))
+
+
+def test_transient_emergency_not_confirmed():
+    eng = make_engine()
+    ac = Aircraft(icao24="zz", squawk="7500")
+    # A single (first) reading must NOT fire – this is the false-hijack fix.
+    assert not any(a.alert_type == "emergency" for a in eng._classify(ac, 0))
 
 
 def test_non_emergency_squawk():
@@ -89,10 +100,11 @@ def test_ping_only_for_brutal_aircraft():
     assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="E4"))      # Doomsday
     assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="A124"))    # An-124
     assert eng.is_ping_worthy(Aircraft(icao24="x", callsign="NIGHTWATCH01"))
-    # A DC-3 / common warbird is special but NOT ping-worthy.
-    assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="DC3"))
+    # A common warbird is special but NOT ping-worthy.
     assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="L39"))
-    assert eng.is_special(Aircraft(icao24="x", typecode="DC3"))         # still special
+    assert eng.is_special(Aircraft(icao24="x", typecode="L39"))         # still special
+    # 'SAM' must not match airline-style callsigns like SAMOA.
+    assert eng.special_label(Aircraft(icao24="x", callsign="SAMOA12")) is None
 
 
 def test_special_callsign_label():

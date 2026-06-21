@@ -147,6 +147,7 @@ class DiscordNotifier:
             embed["image"] = {
                 "url": (
                     "https://static-maps.yandex.ru/1.x/?l=map&z=6&size=600,300"
+                    "&lang=en_US"
                     f"&ll={a.longitude},{a.latitude}"
                     f"&pt={a.longitude},{a.latitude},pm2rdm"
                 )

@@ -58,6 +58,8 @@ class AlertEngine:
         # Presence tracking for "one alert per appearance" dedup.
         self._present: dict[str, float] = {}            # icao -> last seen ts
         self._alerted: dict[tuple[str, str], float] = {}  # (icao, type) -> alerted ts
+        # When an emergency squawk was first seen (to debounce noisy ADS-B data).
+        self._emerg_first: dict[str, float] = {}
 
     # --------------------------------------------------------------- main
 
@@ -100,13 +102,39 @@ class AlertEngine:
             if ts < cutoff:
                 self._alerted.pop(key, None)
 
+    # Emergency squawks (7500/7600/7700) are sometimes a single garbled ADS-B
+    # frame. Require the code to persist for a few seconds before believing it,
+    # so we don't show false "Hijack" or fire false alerts (FR24 fuses sources;
+    # raw OpenSky doesn't).
+    _EMERGENCY_CONFIRM_S = 25
+
+    def confirm_emergency(self, a: Aircraft, now: float = 0.0) -> bool:
+        if a.squawk not in constants.EMERGENCY_SQUAWKS:
+            self._emerg_first.pop(a.icao24, None)
+            return False
+        now = now or time.time()
+        first = self._emerg_first.get(a.icao24)
+        if first is None:
+            self._emerg_first[a.icao24] = now
+            return False
+        return (now - first) >= self._EMERGENCY_CONFIRM_S
+
+    @staticmethod
+    def _cs_match(cs: str, prefix: str) -> bool:
+        """Match a callsign prefix only when followed by a digit (or the prefix is
+        a long word). Avoids e.g. 'SAM' matching 'SAMOA…'."""
+        if not cs.startswith(prefix):
+            return False
+        rest = cs[len(prefix):]
+        return rest == "" or rest[0].isdigit() or len(prefix) >= 5
+
     def colorize(self, a: Aircraft) -> str:
         """Set marker_category for display only (no alerts, no cooldown).
 
         Used for viewport/global aircraft that fall outside the home radius but
         should still be color-coded on the map.
         """
-        if a.squawk in constants.EMERGENCY_SQUAWKS:
+        if self.confirm_emergency(a):
             a.marker_category = constants.CATEGORY_EMERGENCY
         elif a.icao24 in self.watchlist:
             a.watchlist_label = self.watchlist[a.icao24]
@@ -122,8 +150,8 @@ class AlertEngine:
         out: list[AlertRecord] = []
         s = self.settings
 
-        # 1. Emergency squawk (highest priority).
-        if s.alert_emergency and a.squawk in constants.EMERGENCY_SQUAWKS:
+        # 1. Emergency squawk (highest priority) – confirmed over a few seconds.
+        if s.alert_emergency and self.confirm_emergency(a, now):
             label = constants.EMERGENCY_SQUAWKS[a.squawk]
             a.marker_category = constants.CATEGORY_EMERGENCY
             out.append(self._build(a, "emergency",
@@ -183,7 +211,7 @@ class AlertEngine:
         cs = (a.callsign or "").upper().strip()
         if cs:
             for prefix in constants.MILITARY_CALLSIGN_PREFIXES:
-                if cs.startswith(prefix):
+                if self._cs_match(cs, prefix):
                     return True
         return False
 
@@ -196,7 +224,7 @@ class AlertEngine:
         cs = (a.callsign or "").upper().strip()
         if cs:
             for prefix, desc in self.special_callsigns.items():
-                if cs.startswith(prefix):
+                if self._cs_match(cs, prefix):
                     return desc
         return None
 
@@ -209,7 +237,7 @@ class AlertEngine:
         if tc in constants.PING_TYPECODES:
             return True
         cs = (a.callsign or "").upper().strip()
-        return any(cs.startswith(p) for p in constants.PING_CALLSIGNS)
+        return any(self._cs_match(cs, p) for p in constants.PING_CALLSIGNS)
 
     def _rare_label(self, a: Aircraft) -> Optional[str]:
         tc = (a.typecode or "").upper()
