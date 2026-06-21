@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Paths that never require auth (health checks, login assets, the LAN-only MSFS
 # position push from the SimConnect bridge).
 _OPEN_PATHS = {"/api/health", "/favicon.ico", "/api/msfs_position",
-               "/api/nearest_airport"}
+               "/api/nearest_airport", "/api/image"}
 
 
 class AuthManager:

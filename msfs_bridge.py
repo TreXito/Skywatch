@@ -249,10 +249,31 @@ class DiscordPresence:
         self.last = 0.0
         self._gaveup = False
         self._warned = False
+        self._img_cache = {}
 
     @property
     def enabled(self) -> bool:
         return bool(self.client_id)
+
+    def _aircraft_image(self, aircraft) -> str:
+        """A photo of the current aircraft type (via the server's image search).
+        Discord proxies the external URL, so it renders in the status."""
+        if not aircraft:
+            return ""
+        if aircraft in self._img_cache:
+            return self._img_cache[aircraft]
+        url = ""
+        try:
+            r = self.session.get(f"{self.base}/api/image",
+                                 params={"q": f"{aircraft} airplane"}, timeout=6)
+            url = (r.json().get("url") or "")
+        except Exception:  # noqa: BLE001
+            url = ""
+        # Discord assets need an http(s) URL.
+        if not url.startswith("http"):
+            url = ""
+        self._img_cache[aircraft] = url
+        return url
 
     def _connect(self) -> bool:
         if self.rpc:
@@ -301,6 +322,8 @@ class DiscordPresence:
         self.last = now
 
         aircraft = pos.get("aircraft") or "a plane"
+        img = self._aircraft_image(aircraft)
+        assets = {"large_image": img, "large_text": aircraft[:128]} if img else {}
         try:
             if self.flying:
                 kmh = round(speed * 1.852)
@@ -310,10 +333,9 @@ class DiscordPresence:
                 details = f"Flying a {aircraft}"[:128]
                 state = f"{route} · {kmh} km/h · {m} m high".strip(" ·")[:128]
                 self.rpc.update(details=details, state=state, start=int(self.start),
-                                large_text="Microsoft Flight Simulator 2024")
+                                **assets)
             else:
-                self.rpc.update(details="On the ground", state=aircraft[:128],
-                                large_text="Microsoft Flight Simulator 2024")
+                self.rpc.update(details="On the ground", state=aircraft[:128], **assets)
         except Exception:  # noqa: BLE001 – Discord closed
             self.rpc = None
 
@@ -421,9 +443,12 @@ def test_discord(cfg: dict) -> None:
               "    - Is the Discord DESKTOP app running (not just the browser)?\n"
               "    - Did you run:  pip install pypresence ?")
         return
+    img = p._aircraft_image("Cessna 172")
+    assets = {"large_image": img, "large_text": "Cessna 172"} if img else {}
+    if img:
+        print(f"[*] Aircraft image: {img}")
     p.rpc.update(details="Flying a Cessna 172",
-                 state="Vienna -> Salzburg · 240 km/h · 1,500 m high",
-                 large_text="Microsoft Flight Simulator 2024")
+                 state="Vienna -> Salzburg · 240 km/h · 1,500 m high", **assets)
     print("[+] Test status set! Look at your Discord profile now (kept for 30s).")
     print("    If Discord still shows only its own 'Playing MSFS' line and NOT these")
     print("    details: Discord Settings -> Activity Privacy -> enable activity sharing,")
