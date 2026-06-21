@@ -409,11 +409,37 @@ def uninstall_autostart() -> None:
         print("[*] No autostart entry found.")
 
 
+def test_discord(cfg: dict) -> None:
+    """Force a sample flight status so you can confirm Discord Rich Presence works
+    without having to fly. Check your Discord profile while this runs."""
+    session = requests.Session()
+    base = cfg["server_url"].split("/api/")[0]
+    p = DiscordPresence(cfg, session, base)
+    print(f"[*] Discord app id: {p.client_id}")
+    if not p._connect():
+        print("[X] Could not connect to Discord.\n"
+              "    - Is the Discord DESKTOP app running (not just the browser)?\n"
+              "    - Did you run:  pip install pypresence ?")
+        return
+    p.rpc.update(details="Flying a Cessna 172",
+                 state="Vienna -> Salzburg · 240 km/h · 1,500 m high",
+                 large_text="Microsoft Flight Simulator 2024")
+    print("[+] Test status set! Look at your Discord profile now (kept for 30s).")
+    print("    If Discord still shows only its own 'Playing MSFS' line and NOT these")
+    print("    details: Discord Settings -> Activity Privacy -> enable activity sharing,")
+    print("    and/or turn off auto game-detection for MSFS so this one shows.")
+    time.sleep(30)
+    p.close()
+    print("[*] Done.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Sky Watch MSFS2024 SimConnect bridge")
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--install-autostart", action="store_true")
     ap.add_argument("--uninstall-autostart", action="store_true")
+    ap.add_argument("--test-discord", action="store_true",
+                    help="Set a sample flight status to verify Discord Rich Presence")
     args = ap.parse_args()
 
     if args.install_autostart:
@@ -421,6 +447,9 @@ def main() -> None:
         return
     if args.uninstall_autostart:
         uninstall_autostart()
+        return
+    if args.test_discord:
+        test_discord(load_config(args.config))
         return
     run(load_config(args.config))
 
