@@ -34,6 +34,7 @@
         .map(([k, v]) => [SW.CATEGORY_LABELS[k] || k, v]);
       const el = document.getElementById("stats-body");
       el.innerHTML = `
+        <p class="muted">${s.scope === "worldwide" ? "🌍 Worldwide" : "📍 Local area"} · live</p>
         <div class="stat-grid">
           <div class="stat-big"><b>${s.total}</b><span>in range</span></div>
           <div class="stat-big"><b>${s.airborne}</b><span>airborne</span></div>

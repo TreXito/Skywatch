@@ -64,6 +64,7 @@ class AppState:
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.global_interesting: list[Aircraft] = []
+        self.global_stats: dict | None = None    # worldwide stats from the scan
         self.msfs: dict | None = None        # latest own-aircraft position (MSFS)
         self.msfs_logger: MsfsLogger
         self.region_seen: dict[str, set] = {}
@@ -121,7 +122,8 @@ async def _startup() -> None:
     if settings.zones_enabled:
         asyncio.create_task(state.zones.refresh())
 
-    state.poller_task = asyncio.create_task(_poller_loop())
+    if settings.home_tracking_enabled:
+        state.poller_task = asyncio.create_task(_poller_loop())
     state.maintenance_task = asyncio.create_task(_maintenance_loop())
     if settings.region_alerts_enabled and settings.resolved_watch_regions():
         state.region_task = asyncio.create_task(_region_loop())
@@ -274,6 +276,7 @@ async def _global_scan_loop() -> None:
                 continue
 
             await state.enricher.bulk_enrich(aircraft)
+            state.global_stats = _compute_stats(aircraft)
             interesting = []
             for a in aircraft:
                 if a.latitude is None or a.longitude is None:
@@ -300,8 +303,15 @@ async def _global_scan_loop() -> None:
             # Global alerts (rare/military/emergency/watchlist) with cooldown.
             if state.settings.global_scan_alerts:
                 alerts = await state.alerts.evaluate(state.global_interesting)
+                by = _by_icao(state.global_interesting)
                 for alert in alerts:
-                    await _dispatch_alert(alert, _by_icao(state.global_interesting).get(alert.icao24))
+                    await _dispatch_alert(alert, by.get(alert.icao24))
+                if alerts:
+                    await state.ws.broadcast({
+                        "type": "update", "aircraft": [],
+                        "status": state.opensky.status.as_dict(),
+                        "server_time": time.time(),
+                        "new_alerts": [a.model_dump() for a in alerts]})
 
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
@@ -926,16 +936,15 @@ async def get_photo(icao24: str):
     return {"photo": await state.photos.get(icao24)}
 
 
-@app.get("/api/stats")
-async def get_stats():
-    """Live breakdown of current traffic + recent activity."""
+def _compute_stats(aircraft: list[Aircraft]) -> dict:
+    """Traffic breakdown (by category/country/type) for the stats panel."""
     by_category: dict[str, int] = {}
     by_country: dict[str, int] = {}
     by_type: dict[str, int] = {}
     on_ground = 0
     alt_sum = 0.0
     alt_n = 0
-    for a in state.current:
+    for a in aircraft:
         by_category[a.marker_category] = by_category.get(a.marker_category, 0) + 1
         if a.origin_country:
             by_country[a.origin_country] = by_country.get(a.origin_country, 0) + 1
@@ -951,23 +960,36 @@ async def get_stats():
     def top(d, n=8):
         return sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]
 
-    recent_alerts = await state.db.recent_alerts(limit=500)
-    alert_types: dict[str, int] = {}
-    for al in recent_alerts:
-        alert_types[al["alert_type"]] = alert_types.get(al["alert_type"], 0) + 1
-
     return {
-        "total": len(state.current),
+        "total": len(aircraft),
         "on_ground": on_ground,
-        "airborne": len(state.current) - on_ground,
+        "airborne": len(aircraft) - on_ground,
         "avg_altitude_m": round(alt_sum / alt_n) if alt_n else None,
         "by_category": by_category,
         "top_countries": top(by_country),
         "top_types": top(by_type),
-        "alerts_24h": len(recent_alerts),
-        "alerts_by_type": alert_types,
-        "server_time": time.time(),
     }
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """Live traffic breakdown + recent alerts. Worldwide when the home poller is
+    off; otherwise the home-radius traffic."""
+    if state.settings.home_tracking_enabled and state.current:
+        stats = _compute_stats(state.current)
+        stats["scope"] = "local"
+    else:
+        stats = state.global_stats or _compute_stats([])
+        stats["scope"] = "worldwide"
+
+    recent_alerts = await state.db.recent_alerts(limit=500)
+    alert_types: dict[str, int] = {}
+    for al in recent_alerts:
+        alert_types[al["alert_type"]] = alert_types.get(al["alert_type"], 0) + 1
+    stats["alerts_24h"] = len(recent_alerts)
+    stats["alerts_by_type"] = alert_types
+    stats["server_time"] = time.time()
+    return stats
 
 
 def _csv_response(headers: list[str], rows: list[dict], filename: str) -> Response:

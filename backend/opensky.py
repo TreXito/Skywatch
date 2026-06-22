@@ -66,6 +66,9 @@ class OpenSkyClient:
         self._viewport_cache: dict = {}
         self._credit_day = None
         self._credits_used = 0
+        # Token bucket that paces credits evenly across the day (see _refill).
+        self._tokens: Optional[float] = None
+        self._tokens_ts: float = 0.0
 
         if settings.opensky_client_id and settings.opensky_client_secret:
             self.status.auth_mode = "oauth2"
@@ -126,13 +129,46 @@ class OpenSkyClient:
             self._credit_day = today
             self._credits_used = 0
             self.status.budget_reached = False
-        self._credits_used += self._estimate_credits(bbox)
+        cost = self._estimate_credits(bbox)
+        self._credits_used += cost
+        self._tokens = self._refill() - cost     # spend tokens for this call
         self.status.credits_used = self._credits_used
         self.status.credit_budget = self.settings.daily_credit_budget
 
     @property
     def credits_remaining(self) -> int:
         return max(0, self.settings.daily_credit_budget - self._credits_used)
+
+    # --- credit pacing (token bucket) -------------------------------------
+    # OpenSky bills credits per query area, ~4000/day on a free account. We spread
+    # them evenly over the day so we never run dry early and never exceed the cap.
+    def _budget(self) -> float:
+        return self.settings.daily_credit_budget * 0.95   # 5% safety margin
+
+    def _refill(self) -> float:
+        budget = self._budget()
+        cap = budget * 0.08                 # small burst allowance
+        rate = budget / 86400.0             # credits per second (avg = budget/day)
+        now = time.time()
+        if self._tokens is None:
+            self._tokens = cap
+        else:
+            self._tokens = min(cap, self._tokens + rate * (now - self._tokens_ts))
+        self._tokens_ts = now
+        return self._tokens
+
+    def _over_budget(self, background: bool, bbox: Optional[tuple]) -> bool:
+        """True if this call should be skipped right now to stay on pace.
+
+        Background scans (home/region/global) get priority; interactive map
+        fetches must leave a reserve so the scans + stats never starve."""
+        cost = self._estimate_credits(bbox)
+        tokens = self._refill()
+        reserve = 0.0 if background else self._budget() * 0.08 * 0.45
+        over = tokens - reserve < cost
+        if over:
+            self.status.budget_reached = True
+        return over
 
     # ----------------------------------------------------------- polling
 
@@ -170,23 +206,11 @@ class OpenSkyClient:
         self._account(bbox)
         return [Aircraft.from_state_vector(sv) for sv in states if sv and sv[0]]
 
-    def _over_budget(self, background: bool) -> bool:
-        """True if a request should be skipped to stay within the daily budget.
-
-        Interactive (browser) fetches stop earlier so a chunk is always reserved
-        for the essential background scans; background scans use the full budget.
-        The whole point: max out the budget without ever exceeding it.
-        """
-        budget = self.settings.daily_credit_budget
-        threshold = budget if background else int(budget * 0.85)
-        return self._credits_used >= threshold
-
     async def fetch_states(self) -> Optional[list[Aircraft]]:
         """Home-radius poll used for alerts/history. Updates status + schedule."""
         s = self.settings
         bbox = bounding_box(s.latitude, s.longitude, s.radius_km)
-        if self._over_budget(background=True):
-            self.status.budget_reached = True
+        if self._over_budget(True, bbox):
             self._schedule_next()
             return None
         try:
@@ -230,10 +254,9 @@ class OpenSkyClient:
         if cached and now - cached[0] < ttl:
             return cached[1]
 
-        # Credit budget guard: background scans use the full budget, interactive
-        # map fetches reserve a margin so the scans always have credits left.
-        if self._over_budget(background):
-            self.status.budget_reached = True
+        # Credit pacing: background scans get priority; interactive map fetches
+        # are throttled so we spread the daily budget over the whole day.
+        if self._over_budget(background, bbox):
             return cached[1] if cached else None
 
         # Global politeness gap between any two viewport calls.

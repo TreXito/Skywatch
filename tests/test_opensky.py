@@ -14,3 +14,16 @@ def test_credit_estimation_by_area():
 def test_default_credit_budget():
     s = Settings(latitude=48, longitude=14)
     assert s.daily_credit_budget == 4000
+
+
+def test_credit_pacing_caps_usage():
+    s = Settings(latitude=1, longitude=1, daily_credit_budget=4000)
+    c = OpenSkyClient(s)
+    # Fresh bucket allows a global (4-credit) call.
+    assert c._over_budget(True, None) is False
+    # Drain the bucket fast (time barely advances) → further calls are paced off.
+    for _ in range(300):
+        c._account(None)
+    assert c._over_budget(True, None) is True
+    # Interactive is throttled at least as hard as background.
+    assert c._over_budget(False, None) is True

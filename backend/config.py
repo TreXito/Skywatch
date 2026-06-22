@@ -77,6 +77,9 @@ class Settings(BaseModel):
     tracking_mode: str = "viewport"
     max_aircraft: int = 800                  # cap markers for browser performance
     routes_enabled: bool = True              # origin/destination lookup (adsbdb)
+    # Local home-radius poll. Off = scan worldwide only (the global scan), which is
+    # far cheaper on OpenSky credits; the map still fills in from the viewport.
+    home_tracking_enabled: bool = True
 
     # --- map / UI ---
     dark_mode: bool = True
