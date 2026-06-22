@@ -30,6 +30,8 @@
         `&lomax=${Math.min(180, b.getEast()).toFixed(4)}`;
       const res = await fetch(`/api/states${q}`, SW.fetchOpts());
       const data = await res.json();
+      // Sync the client clock to the server so we can age positions accurately.
+      if (data.server_time) SW.clockOffset = data.server_time - Date.now() / 1000;
       SW.lastList = data.aircraft || [];
       SW.updateAircraft(SW.lastList);
       SW.updateStatus(data.status, SW.lastList.length);

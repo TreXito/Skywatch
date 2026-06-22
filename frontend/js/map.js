@@ -208,8 +208,12 @@
           dispLat: ac.latitude, dispLon: ac.longitude, trail: [],
         };
       }
-      // Re-anchor prediction to the reported position.
-      entry.anchorLat = ac.latitude; entry.anchorLon = ac.longitude; entry.anchorTime = now;
+      // Re-anchor prediction to the reported position, at the REAL time that
+      // position is from (OpenSky time_position), so dead-reckoning is accurate
+      // even with infrequent (100s) scans.
+      entry.anchorLat = ac.latitude; entry.anchorLon = ac.longitude;
+      entry.posTime = ac.time_position || ac.last_contact ||
+        (Date.now() / 1000 + (SW.clockOffset || 0));
       const moving = !ac.on_ground && ac.velocity && ac.true_track != null;
       if (!moving) { entry.dispLat = ac.latitude; entry.dispLon = ac.longitude;
         entry.marker.setLatLng([ac.latitude, ac.longitude]); }
@@ -299,16 +303,15 @@
     requestAnimationFrame(animate);
     if (ts - lastFrame < 40) return;
     lastFrame = ts;
-    const now = Date.now();
+    const serverNow = Date.now() / 1000 + (SW.clockOffset || 0);
     const markers = map.markers;
     for (const icao in markers) {
       const e = markers[icao];
       const a = e.data;
       if (!a || a.on_ground || !a.velocity || a.true_track == null || e.anchorLat == null) continue;
-      const age = (now - e.anchorTime) / 1000;
-      if (age > 90) continue;  // stop extrapolating very stale data
-      // Move at the REAL ground speed: position = anchor + velocity * elapsed,
-      // set directly (no easing). This is exactly real-time, so it never races.
+      const age = serverNow - (e.posTime || serverNow);   // seconds since the real fix
+      if (age < 0 || age > 300) continue;  // skip clock skew / very stale data
+      // Move at the REAL ground speed from the position's actual timestamp.
       const [tlat, tlon] = destPoint(e.anchorLat, e.anchorLon, a.velocity * age, a.true_track);
       e.marker.setLatLng([tlat, tlon]);
     }

@@ -64,7 +64,8 @@ class AppState:
         self.ws = WebSocketManager()
         self.current: list[Aircraft] = []
         self.global_interesting: list[Aircraft] = []
-        self.global_stats: dict | None = None    # worldwide stats from the scan
+        self.global_all: list[Aircraft] = []     # full worldwide set (for the map)
+        self.global_stats: dict | None = None     # worldwide stats from the scan
         self.msfs: dict | None = None        # latest own-aircraft position (MSFS)
         self.msfs_logger: MsfsLogger
         self.region_seen: dict[str, set] = {}
@@ -276,6 +277,10 @@ async def _global_scan_loop() -> None:
                 continue
 
             await state.enricher.bulk_enrich(aircraft)
+            for a in aircraft:
+                state.alerts.colorize(a)        # colour every aircraft for the map
+            state.global_all = [a for a in aircraft
+                                if a.latitude is not None and a.longitude is not None]
             state.global_stats = _compute_stats(aircraft)
             interesting = []
             for a in aircraft:
@@ -641,6 +646,24 @@ async def get_states(lamin: float = None, lamax: float = None,
         bbox = None
     else:
         bbox = bounding_box(s.latitude, s.longitude, s.radius_km)
+
+    # Worldwide-only mode: serve the map from the latest global scan cache so
+    # panning around costs ZERO extra OpenSky credits (the budget goes to scans).
+    if not s.home_tracking_enabled and state.global_all:
+        out = state.global_all
+        if bbox is not None:
+            out = [a for a in out if bbox[0] <= a.latitude <= bbox[1]
+                   and bbox[2] <= a.longitude <= bbox[3]]
+        if len(out) > s.max_aircraft:
+            if bbox is not None:
+                clat, clon = (bbox[0] + bbox[1]) / 2, (bbox[2] + bbox[3]) / 2
+            else:
+                clat, clon = s.latitude, s.longitude
+            out = sorted(out, key=lambda a: haversine_km(clat, clon, a.latitude, a.longitude))[: s.max_aircraft]
+        await _record_sightings(out)
+        return {"aircraft": [a.model_dump() for a in out],
+                "status": state.opensky.status.as_dict(),
+                "count_total": len(state.global_all), "server_time": time.time()}
 
     aircraft = await state.opensky.fetch_viewport(bbox)
     if aircraft is None:
