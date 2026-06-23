@@ -111,11 +111,6 @@ SPECIAL_TYPECODES = {
     "P51": "P-51 Mustang — WWII long-range escort fighter",
     "B17": "B-17 Flying Fortress — WWII bomber, ~1 airworthy left",
     "B29": "B-29 Superfortress — 'FIFI', the only airworthy one",
-    # Jet trainers with history
-    "L39": "Aero L-39 Albatros — the Eastern Bloc's standard jet trainer",
-    "TS11": "PZL TS-11 Iskra — Poland's home-grown jet trainer",
-    "MB33": "Aermacchi MB-339 — jet of the Frecce Tricolori display team",
-    "M339": "Aermacchi MB-339 — Frecce Tricolori display jet",
     # Reconnaissance / spy
     "U2": "Lockheed U-2 — Cold War spyplane, flies at ~21 km",
     "RC35": "Boeing RC-135 Rivet Joint — the West's top SIGINT platform",
@@ -128,13 +123,14 @@ SPECIAL_TYPECODES = {
     "E6B": "Boeing E-6B Mercury — nuclear command relay (TACAMO)",
 }
 
-# Only these truly extreme aircraft earn an @mention ping (a DC-3 or a common
-# warbird does NOT). The broader SPECIAL_* lists still flag/alert; this is tighter.
+# Ping/alert ONLY for brutal outliers — aircraft you essentially never see fly.
+# NOT Beluga/Dreamlifter (fly daily between plants), NOT A380/747-8, NOT generic
+# military, NOT L-39/common trainers. Just doomsday/spy planes, Antonov outsize,
+# Concorde, and the handful of airworthy WWII heavies.
 PING_TYPECODES = {
-    "E4", "E6", "E6B",                      # airborne nuclear command posts
-    "U2", "RC35", "RC135", "RQ4", "GHWK",   # strategic recon / spyplanes
+    "E4", "E6", "E6B",                       # airborne nuclear command posts
+    "U2", "SR71", "RC35", "RC135", "RQ4", "GHWK",  # strategic recon / spyplanes
     "A124", "A225",                          # Antonov outsize
-    "A37X", "A337", "A3ST", "B74R", "BLCF",  # Beluga / Dreamlifter
     "CONC",                                  # Concorde
     "B29", "B17", "LANC",                    # 1-of-a-kind WWII heavies
 }

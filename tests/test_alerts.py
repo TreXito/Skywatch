@@ -18,7 +18,7 @@ def test_emergency_squawk_detection():
     ac = Aircraft(icao24="abc", squawk="7700", latitude=48.3, longitude=14.2)
     # First sighting is not yet confirmed (debounce against noisy ADS-B data).
     assert not any(a.alert_type == "emergency" for a in eng._classify(ac, now))
-    eng._emerg_first["abc"] = now - 30   # persisted long enough → confirmed
+    eng._emerg_first["abc"] = now - 100  # persisted past the 90s debounce → confirmed
     alerts = eng._classify(ac, now)
     assert any(a.alert_type == "emergency" for a in alerts)
     assert ac.marker_category == constants.CATEGORY_EMERGENCY
@@ -100,9 +100,13 @@ def test_ping_only_for_brutal_aircraft():
     assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="E4"))      # Doomsday
     assert eng.is_ping_worthy(Aircraft(icao24="x", typecode="A124"))    # An-124
     assert eng.is_ping_worthy(Aircraft(icao24="x", callsign="NIGHTWATCH01"))
-    # A common warbird is special but NOT ping-worthy.
+    # Beluga is special (worth seeing on the map) but NOT ping-worthy — they fly
+    # daily between Airbus plants, so they must never ping/alert.
+    assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="A37X"))
+    assert eng.is_special(Aircraft(icao24="x", typecode="A37X"))        # still special
+    # L-39 is a common trainer — neither ping-worthy nor special.
     assert not eng.is_ping_worthy(Aircraft(icao24="x", typecode="L39"))
-    assert eng.is_special(Aircraft(icao24="x", typecode="L39"))         # still special
+    assert not eng.is_special(Aircraft(icao24="x", typecode="L39"))
     # 'SAM' must not match airline-style callsigns like SAMOA.
     assert eng.special_label(Aircraft(icao24="x", callsign="SAMOA12")) is None
 

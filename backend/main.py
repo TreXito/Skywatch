@@ -215,12 +215,13 @@ async def _process(aircraft: list[Aircraft]) -> None:
 
 
 def _is_mega_cool(alert, aircraft) -> bool:
-    """Only genuinely cool events earn a Discord ping: emergencies, the curated
-    'special' aircraft, watchlist hits, and region entries. Generic military/rare
-    stay on the map + AI panel only."""
+    """Only brutal outliers earn a Discord post: confirmed emergencies, watchlist
+    hits, region entries, and the truly-rare ping-worthy aircraft (doomsday/spy
+    planes, Antonov outsize, airworthy WWII heavies). Beluga/A380/L-39/generic
+    military are common — they stay on the map + AI panel only, no Discord."""
     if alert.alert_type in ("emergency", "watchlist", "region"):
         return True
-    return bool(aircraft and state.alerts.is_special(aircraft))
+    return bool(aircraft and state.alerts.is_ping_worthy(aircraft))
 
 
 def _is_coolest(alert, aircraft) -> bool:
@@ -305,9 +306,19 @@ async def _global_scan_loop() -> None:
             logger.info("Global scan: %d aircraft → %d interesting worldwide",
                         len(aircraft), len(interesting))
 
-            # Global alerts (rare/military/emergency/watchlist) with cooldown.
+            # Global alerts — ONLY brutal outliers: confirmed emergencies, the
+            # ping-worthy rare aircraft, and watchlist hits. The broad
+            # military/rare/special set stays browsable in the panel but never
+            # alerts/pings (worldwide there are always dozens of A380s, Belugas,
+            # military, etc. — alerting on those is pure spam).
             if state.settings.global_scan_alerts:
-                alerts = await state.alerts.evaluate(state.global_interesting)
+                outliers = [
+                    a for a in state.global_interesting
+                    if a.marker_category == "emergency"
+                    or a.icao24 in state.alerts.watchlist
+                    or state.alerts.is_ping_worthy(a)
+                ]
+                alerts = await state.alerts.evaluate(outliers)
                 by = _by_icao(state.global_interesting)
                 for alert in alerts:
                     await _dispatch_alert(alert, by.get(alert.icao24))

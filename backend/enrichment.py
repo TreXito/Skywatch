@@ -83,9 +83,12 @@ class Enricher:
         return meta
 
     def _categorize(self, a: Aircraft) -> str:
-        """Best-effort marker category for frontend coloring (non-alert)."""
-        if a.squawk in constants.EMERGENCY_SQUAWKS:
-            return constants.CATEGORY_EMERGENCY
+        """Best-effort marker category for frontend coloring (non-alert).
+
+        NOTE: emergency is deliberately NOT decided here. A single garbled ADS-B
+        frame routinely shows a bogus 7500/7600/7700, so emergency is owned by the
+        alert engine (confirm_emergency), which requires the code to persist before
+        believing it. Flagging it here would paint false 'EMERGENCY' markers."""
         if a.category in constants.GROUND_VEHICLE_CATEGORIES:
             return constants.CATEGORY_GROUND
         if a.category == constants.BALLOON_CATEGORY:

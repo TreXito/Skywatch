@@ -106,7 +106,7 @@ class AlertEngine:
     # frame. Require the code to persist for a few seconds before believing it,
     # so we don't show false "Hijack" or fire false alerts (FR24 fuses sources;
     # raw OpenSky doesn't).
-    _EMERGENCY_CONFIRM_S = 25
+    _EMERGENCY_CONFIRM_S = 90
 
     def confirm_emergency(self, a: Aircraft, now: float = 0.0) -> bool:
         if a.squawk not in constants.EMERGENCY_SQUAWKS:
@@ -136,7 +136,12 @@ class AlertEngine:
         """
         if self.confirm_emergency(a):
             a.marker_category = constants.CATEGORY_EMERGENCY
-        elif a.icao24 in self.watchlist:
+            return a.marker_category
+        # Not a confirmed emergency: clear any optimistic emergency flag so a single
+        # garbled 7500/7600/7700 frame doesn't stick as a red marker.
+        if a.marker_category == constants.CATEGORY_EMERGENCY:
+            a.marker_category = constants.CATEGORY_NORMAL
+        if a.icao24 in self.watchlist:
             a.watchlist_label = self.watchlist[a.icao24]
             a.marker_category = constants.CATEGORY_WATCHLIST
         elif self._is_military(a):
