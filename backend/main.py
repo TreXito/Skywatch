@@ -283,6 +283,14 @@ async def _global_scan_loop() -> None:
             state.global_all = [a for a in aircraft
                                 if a.latitude is not None and a.longitude is not None]
             state.global_stats = _compute_stats(aircraft)
+
+            # Archive EVERY flight worldwide (big-disk mode): log all aircraft into
+            # the sightings + flight tables so we keep a complete record forever.
+            if state.settings.flight_history_enabled and state.settings.archive_all_flights:
+                await _record_sightings(state.global_all)
+                await state.db.update_flights(state.global_all)
+            await _update_records(state.global_all)
+
             interesting = []
             for a in aircraft:
                 if a.latitude is None or a.longitude is None:
@@ -525,6 +533,39 @@ async def _handle_region_entry(a: Aircraft, region: dict) -> None:
 _sighting_seen: dict[str, float] = {}
 
 
+def _record_label(a: Aircraft) -> str:
+    """Human label for a record holder, e.g. 'AUA123 · A320'."""
+    bits = [(a.callsign or "").strip(), a.typecode or "", a.operator or ""]
+    return " · ".join(b for b in bits if b) or a.icao24
+
+
+async def _update_records(aircraft: list[Aircraft]) -> None:
+    """Track daily + all-time records (fastest, highest) from the worldwide scan.
+    Bogus ADS-B values are filtered so a glitch can't set an absurd record."""
+    import datetime
+    day = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    airborne = [a for a in aircraft if not a.on_ground]
+    # Fastest: sane ground speed only (≤ ~Mach 2; faster is almost always noise).
+    speedy = [a for a in airborne if a.velocity and 0 < a.velocity <= 700]
+    if speedy:
+        f = max(speedy, key=lambda a: a.velocity)
+        info = {"icao24": f.icao24, "callsign": f.callsign,
+                "typecode": f.typecode, "label": _record_label(f)}
+        for key in ("fastest:today", "fastest:alltime"):
+            await state.db.update_record(key, round(f.velocity, 1), day, info)
+    # Highest: plausible altitudes only (≤ 30 km covers U-2s and high balloons).
+    high = [a for a in airborne
+            if (a.geo_altitude or a.baro_altitude)
+            and 0 < (a.geo_altitude or a.baro_altitude) <= 30000]
+    if high:
+        h = max(high, key=lambda a: (a.geo_altitude or a.baro_altitude))
+        alt = h.geo_altitude or h.baro_altitude
+        info = {"icao24": h.icao24, "callsign": h.callsign,
+                "typecode": h.typecode, "label": _record_label(h)}
+        for key in ("highest:today", "highest:alltime"):
+            await state.db.update_record(key, round(alt, 1), day, info)
+
+
 async def _record_sightings(aircraft: list[Aircraft]) -> None:
     """Record positions (for trails), deduped to ~1 point / 30s per aircraft so
     every visible aircraft builds a full trail without bloating the database."""
@@ -557,7 +598,9 @@ async def _maintenance_loop() -> None:
     while True:
         try:
             await asyncio.sleep(3600)
-            await state.db.prune(state.settings.history_retention_hours)
+            # When archiving every flight, keep everything forever (big-disk mode).
+            if not state.settings.archive_all_flights:
+                await state.db.prune(state.settings.history_retention_hours)
             await state.enricher.ensure_database()
             await state.airports.ensure_database()
             if state.settings.zones_enabled:
@@ -830,6 +873,7 @@ SETTINGS_SCHEMA = [
     ("Layers", "airports_enabled", "bool", "Airports"),
     ("Layers", "zones_enabled", "bool", "Conflict zones"),
     ("Layers", "flight_history_enabled", "bool", "Flight history"),
+    ("Layers", "archive_all_flights", "bool", "Archive EVERY flight (big disk)"),
     ("Layers", "trail_minutes", "number", "Trail length (min)"),
     ("Ollama AI", "ollama_enabled", "bool", "Enable Ollama"),
     ("Ollama AI", "ollama_url", "text", "Ollama URL (e.g. http://server:11434)"),
@@ -915,6 +959,23 @@ async def get_track(icao24: str):
     # aircraft shows its whole trail – not just the last N minutes.
     points = await state.db.recent_track(icao24, 0)
     return {"icao24": icao24.lower(), "track": points}
+
+
+@app.get("/api/archive/flights")
+async def archive_flights(limit: int = 60, q: str = "", min_points: int = 2):
+    """Worldwide flight archive: most recent flights across ALL aircraft, with an
+    optional search over callsign / type / registration / icao24."""
+    return {"flights": await state.db.recent_flights_all(
+        limit=limit, search=q.strip(), min_points=min_points)}
+
+
+@app.get("/api/archive/stats")
+async def archive_stats():
+    counts = await state.db.archive_counts()
+    counts["archiving"] = bool(state.settings.archive_all_flights
+                               and state.settings.flight_history_enabled)
+    counts["records"] = await state.db.get_records()
+    return counts
 
 
 @app.get("/api/flights/{icao24}")

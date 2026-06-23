@@ -68,6 +68,7 @@
     SW.initTools();
     SW.initStats();
     SW.initAI();
+    SW.initArchive();
     SW.initSettings();
     SW.initMsfs();
     SW.initLayers(config);

@@ -21,6 +21,9 @@ class Database:
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._db: Optional[aiosqlite.Connection] = None
+        # In-memory open-flight sessions keyed by icao24, so archiving every flight
+        # worldwide doesn't need a per-aircraft SELECT each scan (~15k aircraft).
+        self._sessions: dict[str, dict] = {}
 
     async def connect(self) -> None:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -139,6 +142,17 @@ class Database:
             CREATE TABLE IF NOT EXISTS meta_info (
                 key   TEXT PRIMARY KEY,
                 value TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS records (
+                key       TEXT PRIMARY KEY,   -- e.g. 'fastest:today', 'highest:alltime'
+                value     REAL NOT NULL,
+                icao24    TEXT,
+                callsign  TEXT,
+                typecode  TEXT,
+                label     TEXT,
+                day       TEXT,               -- UTC date for ':today' records
+                ts        REAL
             );
             """
         )
@@ -337,44 +351,131 @@ class Database:
         A new flight is started when an aircraft reappears after `gap_s` of no
         contact or with a different callsign; otherwise the current flight is
         extended. Gives a FlightRadar24-like per-aircraft flight log.
+
+        Open sessions are cached in memory so archiving every flight worldwide
+        (~15k aircraft per scan) batches its writes instead of doing a SELECT +
+        UPDATE per aircraft. On a cache miss the last open flight is loaded from
+        the DB once, so a restart resumes flights instead of fragmenting them.
         """
         assert self._db
         now = time.time()
+        updates: list[tuple] = []
         for a in aircraft_list:
             if a.latitude is None or a.longitude is None:
                 continue
             alt = a.baro_altitude or a.geo_altitude
             callsign = (a.callsign or "").strip() or None
-            async with self._db.execute(
-                "SELECT id, callsign, end_ts, max_alt_m, min_alt_m, points "
-                "FROM flights WHERE icao24 = ? ORDER BY end_ts DESC LIMIT 1",
-                (a.icao24,),
-            ) as cur:
-                row = await cur.fetchone()
+            s = self._sessions.get(a.icao24)
+            if s is None:                       # warm the cache from the DB (restart)
+                async with self._db.execute(
+                    "SELECT id, callsign, end_ts, max_alt_m, min_alt_m "
+                    "FROM flights WHERE icao24 = ? ORDER BY end_ts DESC LIMIT 1",
+                    (a.icao24,),
+                ) as cur:
+                    row = await cur.fetchone()
+                if row is not None:
+                    s = {"id": row["id"], "callsign": row["callsign"],
+                         "end_ts": row["end_ts"], "max": row["max_alt_m"],
+                         "min": row["min_alt_m"]}
+                    self._sessions[a.icao24] = s
 
             new_flight = (
-                row is None
-                or (now - row["end_ts"]) > gap_s
-                or (callsign and row["callsign"] and callsign != row["callsign"])
+                s is None
+                or (now - s["end_ts"]) > gap_s
+                or (callsign and s["callsign"] and callsign != s["callsign"])
             )
             if new_flight:
-                await self._db.execute(
+                cur = await self._db.execute(
                     "INSERT INTO flights (icao24, callsign, typecode, registration, "
                     "start_ts, end_ts, max_alt_m, min_alt_m, points) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
                     (a.icao24, callsign, a.typecode, a.registration,
                      now, now, alt, alt),
                 )
+                self._sessions[a.icao24] = {
+                    "id": cur.lastrowid, "callsign": callsign,
+                    "end_ts": now, "max": alt, "min": alt}
             else:
-                mx = max(row["max_alt_m"] or 0, alt or 0) if alt is not None else row["max_alt_m"]
-                mn = (min(row["min_alt_m"], alt) if (row["min_alt_m"] is not None and alt is not None)
-                      else (alt if row["min_alt_m"] is None else row["min_alt_m"]))
-                await self._db.execute(
-                    "UPDATE flights SET end_ts=?, points=points+1, max_alt_m=?, "
-                    "min_alt_m=?, callsign=COALESCE(callsign, ?) WHERE id=?",
-                    (now, mx, mn, callsign, row["id"]),
-                )
+                if alt is not None:
+                    s["max"] = max(s["max"] or alt, alt)
+                    s["min"] = alt if s["min"] is None else min(s["min"], alt)
+                s["end_ts"] = now
+                if callsign and not s["callsign"]:
+                    s["callsign"] = callsign
+                updates.append((now, s["max"], s["min"], s["callsign"], s["id"]))
+
+        if updates:
+            await self._db.executemany(
+                "UPDATE flights SET end_ts=?, points=points+1, max_alt_m=?, "
+                "min_alt_m=?, callsign=COALESCE(callsign, ?) WHERE id=?",
+                updates,
+            )
         await self._db.commit()
+        # Bound the cache: drop sessions idle past the gap (they'll re-seed if seen).
+        if len(self._sessions) > 60_000:
+            stale = now - gap_s
+            for icao in [k for k, v in self._sessions.items() if v["end_ts"] < stale]:
+                self._sessions.pop(icao, None)
+
+    async def recent_flights_all(self, limit: int = 60, search: str = "",
+                                 min_points: int = 1) -> list[dict]:
+        """Most recent flights across ALL aircraft (the worldwide archive browser).
+        Optional search matches callsign / typecode / registration / icao24."""
+        assert self._db
+        sql = ("SELECT * FROM flights WHERE points >= ?")
+        params: list = [min_points]
+        if search:
+            like = f"%{search.upper()}%"
+            sql += (" AND (UPPER(callsign) LIKE ? OR UPPER(typecode) LIKE ? "
+                    "OR UPPER(registration) LIKE ? OR UPPER(icao24) LIKE ?)")
+            params += [like, like, like, like]
+        sql += " ORDER BY end_ts DESC LIMIT ?"
+        params.append(min(limit, 300))
+        async with self._db.execute(sql, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def archive_counts(self) -> dict:
+        """Totals for the archive panel: how many flights/positions we've kept."""
+        assert self._db
+        out = {}
+        for key, q in (("flights", "SELECT COUNT(*) AS c FROM flights"),
+                       ("positions", "SELECT COUNT(*) AS c FROM sightings"),
+                       ("aircraft", "SELECT COUNT(DISTINCT icao24) AS c FROM flights")):
+            async with self._db.execute(q) as cur:
+                row = await cur.fetchone()
+                out[key] = row["c"] if row else 0
+        return out
+
+    # ----------------------------------------------------------- records
+    async def update_record(self, key: str, value: float, day: str, info: dict) -> bool:
+        """Upsert a record (e.g. fastest/highest). Returns True if it was beaten.
+        ':today' keys also reset when the UTC day rolls over."""
+        assert self._db
+        async with self._db.execute(
+            "SELECT value, day FROM records WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+        is_today = key.endswith(":today")
+        beat = (row is None or value > row["value"]
+                or (is_today and row["day"] != day))
+        if not beat:
+            return False
+        await self._db.execute(
+            "INSERT INTO records (key, value, icao24, callsign, typecode, label, day, ts) "
+            "VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, icao24=excluded.icao24, "
+            "callsign=excluded.callsign, typecode=excluded.typecode, "
+            "label=excluded.label, day=excluded.day, ts=excluded.ts",
+            (key, value, info.get("icao24"), info.get("callsign"),
+             info.get("typecode"), info.get("label"), day, time.time()))
+        await self._db.commit()
+        return True
+
+    async def get_records(self) -> dict:
+        assert self._db
+        async with self._db.execute(
+            "SELECT key, value, icao24, callsign, typecode, label, day, ts "
+            "FROM records") as cur:
+            return {r["key"]: dict(r) for r in await cur.fetchall()}
 
     async def set_flight_route(self, icao24: str, callsign: str,
                                origin: str, destination: str) -> None:

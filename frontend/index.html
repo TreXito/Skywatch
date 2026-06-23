@@ -23,6 +23,7 @@
     <div class="top-actions">
       <button id="btn-ai" class="icon-btn" title="AI picks">🧠</button>
       <button id="btn-msfs" class="icon-btn" title="My MSFS flights">🎮</button>
+      <button id="btn-archive" class="icon-btn" title="Flight archive & records">🗄️</button>
       <button id="btn-stats" class="icon-btn" title="Statistics">📊</button>
       <button id="btn-filters" class="icon-btn" title="Filters">⚙️</button>
       <button id="btn-settings" class="icon-btn" title="Settings">🛠️</button>
@@ -89,6 +90,14 @@
     <div id="ai-body"><p class="muted">Scanning…</p></div>
   </aside>
 
+  <!-- Flight archive & records panel -->
+  <aside id="archive-panel" class="panel hidden">
+    <h3>🗄️ Flight Archive &amp; Records</h3>
+    <input id="archive-search" type="text" placeholder="Search callsign / type / reg / icao24…"
+           class="archive-search" />
+    <div id="archive-body"><p class="muted">Loading…</p></div>
+  </aside>
+
   <!-- MSFS flights panel -->
   <aside id="msfs-panel" class="panel hidden">
     <h3>🎮 My MSFS Flights</h3>
@@ -136,6 +145,7 @@
   <script src="/js/tools.js"></script>
   <script src="/js/states.js"></script>
   <script src="/js/ai.js"></script>
+  <script src="/js/archive.js"></script>
   <script src="/js/settings.js"></script>
   <script src="/js/msfs.js"></script>
   <script src="/js/websocket.js"></script>

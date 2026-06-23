@@ -230,6 +230,18 @@ body.has-selection .ac-marker.focused { opacity: 1; }
 #btn-ai.pulse { animation: pulse 1.2s ease-in-out 3; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 3px rgba(155,89,182,.6); } }
 
+/* ---- Flight archive & records ---- */
+.archive-search { width: 100%; box-sizing: border-box; margin-bottom: .5rem;
+  padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); color: inherit; font-size: .85rem; }
+.rec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; margin-bottom: .5rem; }
+.rec-card { background: var(--panel-2); border-radius: 8px; padding: .45rem .55rem;
+  border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: .1rem; }
+.rec-title { color: var(--muted); font-size: .72rem; }
+.rec-val { font-size: 1.05rem; }
+.rec-who { color: var(--muted); font-size: .7rem; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+
 /* ---- Settings form ---- */
 .set-group { margin-bottom: .5rem; border: 1px solid var(--border); border-radius: 8px;
   padding: .3rem .5rem; }

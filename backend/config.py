@@ -50,7 +50,7 @@ class Settings(BaseModel):
     # Only send Discord alerts for genuinely cool events (emergency / special /
     # watchlist / region). Generic military/rare stay on the map + AI panel only.
     discord_only_mega: bool = True
-    ai_digest_minutes: int = 15          # post the current top-3 to Discord this often
+    ai_digest_minutes: int = 60          # post the current top-3 to Discord this often
 
     # --- watchlist ---
     watchlist: List[WatchlistEntry] = Field(default_factory=list)
@@ -128,6 +128,11 @@ class Settings(BaseModel):
     # --- flight trails / history (FlightRadar24-like) ---
     flight_history_enabled: bool = True
     trail_minutes: int = 180             # how far back the selected trail goes
+    # Archive EVERY flight worldwide (not just what's on screen): each global scan
+    # logs all aircraft into the flight + sightings tables, and pruning is disabled
+    # so nothing is ever deleted. With a global scan this is ~1 GB/day – meant for
+    # big disks ("just to have it"). Turn off to keep only history_retention_hours.
+    archive_all_flights: bool = True
 
     # --- MSFS2024 own-aircraft (via the SimConnect bridge) ---
     msfs_enabled: bool = True
