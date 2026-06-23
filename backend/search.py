@@ -104,9 +104,11 @@ class SearchService:
             resp.raise_for_status()
             data = resp.json() or {}
             a = data.get("address", {})
+            # Populated places only. Deliberately NO county/state/country fallback:
+            # over open water or remote land those return useless labels like
+            # "Italia" or "Sicilia" that read as a bogus destination.
             name = (a.get("city") or a.get("town") or a.get("village")
-                    or a.get("municipality") or a.get("county") or a.get("state")
-                    or data.get("name"))
+                    or a.get("hamlet") or a.get("municipality") or a.get("suburb"))
             if len(self._geo_cache) > 500:
                 self._geo_cache.clear()
             self._geo_cache[key] = name

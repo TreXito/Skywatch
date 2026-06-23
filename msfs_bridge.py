@@ -119,6 +119,27 @@ def _compass(deg) -> str:
         return "—"
 
 
+def _place_label(session, base, lat, lon) -> str:
+    """Best human label for a coordinate: the nearest airport if one is close (so a
+    takeoff/approach reads as the actual airport, e.g. 'Palermo–Punta Raisi'),
+    otherwise the nearest town. Empty when over open water / nothing nearby, so the
+    caller can show 'en route' instead of a bogus country name."""
+    try:
+        r = session.get(f"{base}/api/nearest_airport",
+                        params={"lat": lat, "lon": lon}, timeout=4)
+        ap = (r.json().get("airport") or "").strip()
+        if ap:
+            return ap
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        r = session.get(f"{base}/api/nearest_place",
+                        params={"lat": lat, "lon": lon}, timeout=4)
+        return (r.json().get("place") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 class DiscordReporter:
     """Posts a friendly, plain-English 'now flying' status to Discord and keeps it
     updated, so anyone can follow along (not just aviation nerds)."""
@@ -142,12 +163,7 @@ class DiscordReporter:
         return bool(self.webhook)
 
     def _nearest(self, lat, lon) -> str:
-        try:
-            r = self.session.get(f"{self.base}/api/nearest_place",
-                                  params={"lat": lat, "lon": lon}, timeout=4)
-            return (r.json().get("place") or "an unknown spot")
-        except Exception:  # noqa: BLE001
-            return "an unknown spot"
+        return _place_label(self.session, self.base, lat, lon) or "an unknown spot"
 
     def update(self, pos: dict) -> None:
         if not self.enabled:
@@ -298,12 +314,7 @@ class DiscordPresence:
             return False
 
     def _nearest(self, lat, lon) -> str:
-        try:
-            r = self.session.get(f"{self.base}/api/nearest_place",
-                                 params={"lat": lat, "lon": lon}, timeout=4)
-            return r.json().get("place") or ""
-        except Exception:  # noqa: BLE001
-            return ""
+        return _place_label(self.session, self.base, lat, lon)
 
     def update(self, pos: dict) -> None:
         if not self.enabled or not self._connect():
